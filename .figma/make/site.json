@@ -1,0 +1,10 @@
+{
+  "description": "TaxiYa Ocaña is a mobile app that connects passengers with local taxi drivers, featuring AI-based fare suggestions and secure ride tracking for a safe travel experience.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
