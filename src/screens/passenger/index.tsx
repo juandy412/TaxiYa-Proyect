@@ -61,6 +61,7 @@ import {
 import { MapView, type MapViewControls } from "../../components/MapView"
 
 import { PlaceAutocomplete } from "../../components/PlaceAutocomplete"
+import { LogoutButton } from "../../components/LogoutButton"
 
 import { assignDriver, cancelTrip, finishTrip, startTrip } from "../../lib/trip"
 
@@ -149,6 +150,12 @@ export function Welcome({
         </div>
       </div>
       <div className="stack welcome-actions">
+        <p className="welcome-register-hint">
+          {translate(
+            "¿Viajas o conduces? Elige tu perfil en el siguiente paso.",
+            language,
+          )}
+        </p>
         <Button
           onClick={() => {
             setRole("passenger")
@@ -164,7 +171,7 @@ export function Welcome({
             go("register")
           }}
         >
-          Registrarse
+          {translate("Crear cuenta", language)}
         </Button>
         <p className="prototype-note">
           {translate(
@@ -203,10 +210,11 @@ export function RoleChips({
       <button
         type="button"
         aria-pressed={role === "driver"}
+        aria-label={translate("Soy conductor", language)}
         className={role === "driver" ? "active" : ""}
         onClick={() => setRole("driver")}
       >
-        {translate("Soy conductor", language)}
+        {translate("Conductor", language)}
       </button>
     </div>
   )
@@ -331,7 +339,7 @@ export function Login({
         </div>
         <div className="login-role-picker">
           <span className="field-label">
-            {translate("¿Con qué tipo de cuenta vas a entrar?", data.language)}
+            {translate("Elige tu tipo de cuenta", data.language)}
           </span>
           <RoleChips role={role} setRole={selectRole} />
           <button
@@ -344,14 +352,21 @@ export function Login({
             <span>
               <b>{translate("Acceso administración", data.language)}</b>
               <small>
-                {translate(
-                  "Solo para quien administra la aplicación.",
-                  data.language,
-                )}
+                {translate("Solo para quien administra la aplicación.", data.language)}
               </small>
             </span>
             <span className="login-admin-indicator" aria-hidden="true" />
           </button>
+          <p className="login-role-status" role="status" aria-live="polite">
+            {translate(
+              role === "passenger"
+                ? "Entrar como pasajero · pide y consulta tus viajes."
+                : role === "driver"
+                  ? "Entrar como conductor · gestiona solicitudes y viajes."
+                  : "Acceso de administrador · revisa conductores y reportes.",
+              data.language,
+            )}
+          </p>
         </div>
         <form onSubmit={submit} className="form login-form" noValidate>
           <div className="login-fields">
@@ -1364,9 +1379,21 @@ export function PassengerHome({
 
   const [taxi, setTaxi] = useState<typeof drivers[number] | null>(null)
 
-  const [sheetMinimized, setSheetMinimized] = useState(false)
+  const [sheetStage, setSheetStage] = useState<"collapsed" | "medium" | "expanded">("expanded")
 
   const dragStart = useRef<number | null>(null)
+  const didDrag = useRef(false)
+  const [mapControls, setMapControls] = useState<MapViewControls | null>(null)
+
+  const stepSheet = () => {
+    if (didDrag.current) {
+      didDrag.current = false
+      return
+    }
+    setSheetStage((stage) =>
+      stage === "collapsed" ? "medium" : stage === "medium" ? "expanded" : "collapsed",
+    )
+  }
 
   const last = data.tripHistory.find((trip) => trip.status === "Completado")
 
@@ -1437,6 +1464,8 @@ export function PassengerHome({
           origin={data.origin}
           originCoordinates={data.originCoordinates}
           showDrivers
+          interactive
+          onControlsReady={setMapControls}
           onDriverPick={setTaxi}
           attributionAbovePanel
         />
@@ -1467,6 +1496,35 @@ export function PassengerHome({
             )}
           </button>
         </span>
+      </div>
+      <div
+        className="home-map-controls"
+        role="group"
+        aria-label={translate("Controles del mapa", data.language)}
+      >
+        <button
+          type="button"
+          aria-label="Acercar mapa"
+          onClick={() => mapControls?.zoomIn()}
+          disabled={!mapControls}
+        >
+          +
+        </button>
+        <button
+          type="button"
+          aria-label="Alejar mapa"
+          onClick={() => mapControls?.zoomOut()}
+          disabled={!mapControls}
+        >
+          −
+        </button>
+        <button
+          type="button"
+          aria-label={translate("Elegir destino en el mapa", data.language)}
+          onClick={() => go("map-picker")}
+        >
+          <Icon name="map" />
+        </button>
       </div>
       {taxi && (
         <div className="map-taxi-card">
@@ -1499,20 +1557,32 @@ export function PassengerHome({
           </Button>
         </div>
       )}
-      <div className={`home-sheet ${sheetMinimized ? "minimized" : ""}`}>
+      <div className={`home-sheet sheet-${sheetStage}`}>
         <button
           className="sheet-handle"
-          aria-label={sheetMinimized ? "Expandir panel" : "Minimizar panel"}
-          onClick={() => setSheetMinimized(!sheetMinimized)}
+          aria-label={
+            sheetStage === "expanded"
+              ? "Plegar panel"
+              : sheetStage === "medium"
+                ? "Expandir o plegar panel"
+                : "Expandir panel"
+          }
+          onClick={stepSheet}
           onPointerDown={(event) => {
             dragStart.current = event.clientY
+            didDrag.current = false
           }}
           onPointerUp={(event) => {
-            if (
-              dragStart.current !== null &&
-              Math.abs(event.clientY - dragStart.current) > 24
-            )
-              setSheetMinimized(event.clientY > dragStart.current)
+            const start = dragStart.current
+            if (start !== null && Math.abs(event.clientY - start) > 24) {
+              didDrag.current = true
+              setSheetStage((stage) => {
+                if (event.clientY < start) {
+                  return stage === "collapsed" ? "medium" : "expanded"
+                }
+                return stage === "expanded" ? "medium" : "collapsed"
+              })
+            }
             dragStart.current = null
           }}
         >
@@ -1522,7 +1592,16 @@ export function PassengerHome({
           <p className="greeting">
             {greeting()}, {firstName(data.account?.name || terms.welcome)}
           </p>
-          <h1>¿A dónde vamos?</h1>
+          {sheetStage !== "collapsed" && <h1>¿A dónde vamos?</h1>}
+          {sheetStage === "collapsed" && (
+            <button
+              className="button primary sheet-destination-action"
+              type="button"
+              onClick={() => setSheetStage("expanded")}
+            >
+              ¿A dónde vamos?
+            </button>
+          )}
           {["requested", "assigned", "enroute", "active"].includes(
             data.tripStatus,
           ) && (
@@ -1533,6 +1612,8 @@ export function PassengerHome({
           <PlaceAutocomplete
             label="Recogida"
             value={data.origin}
+            favorites={data.savedPlaces}
+            recentPlaces={data.tripHistory.slice(0, 5).map((trip) => trip.destination)}
             onChange={(origin) =>
               update({
                 origin,
@@ -1922,13 +2003,14 @@ export function Fare({
         method={method}
         amount={data.offer}
         language={data.language}
-        onConfirm={() => {
+        initialPhone={data.account?.phone || ""}
+        onConfirm={(reference) => {
           update({ paymentMethod: method })
 
           setModal(null)
 
           appNotice(
-            `${translate("Método elegido:", data.language)} ${translate(method, data.language)}. ${translate("No se realizó ningún cobro.", data.language)}`,
+            `${translate("Método elegido:", data.language)} ${translate(method, data.language)}. No se realizó ningún cobro. Referencia demo: ${reference}.`,
           )
         }}
       />,
@@ -1942,6 +2024,8 @@ export function Fare({
           <PlaceAutocomplete
             label="Recogida"
             value={data.origin}
+            favorites={data.savedPlaces}
+            recentPlaces={data.tripHistory.slice(0, 5).map((trip) => trip.destination)}
             onChange={(origin) =>
               update({
                 origin,
@@ -1979,6 +2063,8 @@ export function Fare({
         <PlaceAutocomplete
           label="Recogida"
           value={data.origin}
+          favorites={data.savedPlaces}
+          recentPlaces={data.tripHistory.slice(0, 5).map((trip) => trip.destination)}
           onChange={(origin) =>
             update({ origin, fareManuallyAdjusted: false, selectedDriver: "" })
           }
@@ -2241,37 +2327,33 @@ export function PaymentMethodDialog({
   method,
   amount,
   language,
+  initialPhone = "",
   onConfirm,
 }: {
   method: Stored["paymentMethod"]
   amount: number
   language: Language
-  onConfirm: () => void
+  initialPhone?: string
+  onConfirm: (reference: string) => void
 }) {
-  const [phone, setPhone] = useState("")
-
-  const [reference, setReference] = useState("")
-
-  const [error, setError] = useState("")
+  const [phone, setPhone] = useState(formatColombianPhone(initialPhone))
+  const digits = phone.replace(/\D/g, "").slice(0, 10)
+  const phoneValid = /^3\d{9}$/.test(digits)
+  const reference = useRef("")
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
 
-    if (method !== "Efectivo" && !/^\d{10}$/.test(phone)) {
-      setError("Ingresa un número de celular de 10 dígitos.")
+    if (method !== "Efectivo" && !phoneValid) {
       return
     }
 
-    if (method !== "Efectivo" && reference.trim().length < 4) {
-      setError("Ingresa una referencia de prueba de al menos 4 caracteres.")
-      return
-    }
-
-    onConfirm()
+    reference.current = `TY-${crypto.randomUUID().slice(0, 8).toUpperCase()}`
+    onConfirm(reference.current)
   }
 
   return (
-    <form className="payment-method-dialog" onSubmit={submit}>
+    <form className={`payment-method-dialog payment-${method.toLowerCase()}`} onSubmit={submit}>
       <span className="feature-icon small">
         <Icon name="wallet" />
       </span>
@@ -2293,38 +2375,53 @@ export function PaymentMethodDialog({
       ) : (
         <>
           <Field
-            label="Celular asociado al pago"
+            label="Tu número de celular Nequi/Daviplata"
             value={phone}
-            onChange={setPhone}
+            onChange={(value) => setPhone(formatColombianPhone(value))}
             type="tel"
-            placeholder="3001234567"
-            maxLength={10}
+            inputMode="numeric"
+            placeholder="300 123 4567"
+            maxLength={12}
+            autoComplete="tel"
             required
           />
-          <Field
-            label="Referencia de prueba"
-            value={reference}
-            onChange={setReference}
-            placeholder="Ej.: DEMO-1234"
-            maxLength={40}
-            required
+          <p className="payment-hint">Es el número con el que tienes la cuenta.</p>
+          <p className={`payment-inline-validation ${phoneValid ? "valid" : ""}`} aria-live="polite">
+            {phoneValid
+              ? "Número válido."
+              : digits.length === 0
+                ? "Escribe 10 dígitos. Debe empezar por 3."
+                : "Revisa el número: debe tener 10 dígitos y empezar por 3."}
+          </p>
+          <div className="payment-summary">
+            <span>Monto <b>{money(amount)}</b></span>
+            <span>Método <b>{method}</b></span>
+          </div>
+          <ol className="payment-steps">
+            <li>1. Confirma tu número</li>
+            <li>2. Recibirás la solicitud en tu app</li>
+            <li>3. Aprueba el pago</li>
+          </ol>
+          <p className="simulation-notice">
+            Demo: no se realiza ningún cobro.
+          </p>
+          <input type="hidden" name="phone" value={digits} readOnly
           />
         </>
       )}
-      <p className="simulation-notice">
-        {translate(
-          "Prototipo de demostración: no se realiza un cobro, no se envían estos datos y no debes ingresar claves, códigos de seguridad ni credenciales reales.",
-          language,
-        )}
-      </p>
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
-      <Button type="submit">Confirmar método de pago</Button>
+      {method === "Efectivo" && <p className="simulation-notice">Demo: no se realiza ningún cobro.</p>}
+      <Button type="submit" disabled={method !== "Efectivo" && !phoneValid}>
+        Confirmar método de pago
+      </Button>
     </form>
   )
+}
+
+function formatColombianPhone(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 10)
+  if (digits.length <= 3) return digits
+  if (digits.length <= 6) return `${digits.slice(0, 3)} ${digits.slice(3)}`
+  return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`
 }
 
 export function Searching({
@@ -3862,11 +3959,12 @@ export function Profile({
         method={method}
         amount={data.offer}
         language={data.language}
-        onConfirm={() => {
+        initialPhone={data.account?.phone || ""}
+        onConfirm={(reference) => {
           update({ paymentMethod: method })
           setModal(null)
           appNotice(
-            `${translate("Método elegido:", data.language)} ${translate(method, data.language)}. ${translate("No se realizó ningún cobro.", data.language)}`,
+            `${translate("Método elegido:", data.language)} ${translate(method, data.language)}. No se realizó ningún cobro. Referencia demo: ${reference}.`,
           )
         }}
       />,
@@ -3929,7 +4027,13 @@ export function Profile({
             icon="settings"
             label="Cambiar contraseña"
             onClick={() =>
-              setModal(<PasswordChange data={data} update={update} />)
+              setModal(
+                <PasswordChange
+                  data={data}
+                  update={update}
+                  close={() => setModal(null)}
+                />,
+              )
             }
           />
           <Menu
@@ -3975,23 +4079,10 @@ export function Profile({
           />
         </div>
         <div className="menu-list danger-zone">
-          <Menu
-            icon="logout"
-            label="Cerrar sesión"
-            onClick={() =>
-              setModal(
-                <Confirm
-                  title="¿Cerrar sesión?"
-                  text="Tendrás que ingresar de nuevo para usar TaxiYa."
-                  action="Cerrar sesión"
-                  onConfirm={() => {
-                    update({ loggedIn: false })
-                    setModal(null)
-                    go("welcome")
-                  }}
-                />,
-              )
-            }
+          <LogoutButton
+            update={update}
+            setModal={setModal}
+            go={() => go("welcome")}
           />
           <Menu
             icon="trash"
@@ -4021,8 +4112,20 @@ export function SavedPlaces({ data, update }: StoredUpdateProps) {
   return (
     <>
       <h2>Lugares guardados</h2>
-      <PlaceAutocomplete label="Casa" value={home} onChange={setHome} />
-      <PlaceAutocomplete label="Trabajo" value={work} onChange={setWork} />
+      <PlaceAutocomplete
+        label="Casa"
+        value={home}
+        onChange={setHome}
+        favorites={data.savedPlaces}
+        recentPlaces={data.tripHistory.slice(0, 5).map((trip) => trip.destination)}
+      />
+      <PlaceAutocomplete
+        label="Trabajo"
+        value={work}
+        onChange={setWork}
+        favorites={data.savedPlaces}
+        recentPlaces={data.tripHistory.slice(0, 5).map((trip) => trip.destination)}
+      />
       <Button
         onClick={() => {
           update({
@@ -4270,30 +4373,50 @@ export function NeedsForm({ data, update }: StoredUpdateProps) {
 export function PasswordChange({
   data,
   update,
+  close,
 }: {
   data: Stored
   update: Update
+  close: () => void
 }) {
   const [current, setCurrent] = useState("")
   const [next, setNext] = useState("")
   const [confirm, setConfirm] = useState("")
 
   const [error, setError] = useState("")
+  const [saving, setSaving] = useState(false)
 
   const validNext = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/.test(next)
+  const nextMatchesCurrent = Boolean(current && next && next === current)
+  const canSave =
+    Boolean(data.account) &&
+    Boolean(current) &&
+    validNext &&
+    !nextMatchesCurrent &&
+    next === confirm &&
+    !saving
 
   const save = async () => {
-    if (!data.account || !validNext || next !== confirm || next === current)
-      return
+    if (!data.account || !canSave) return
+    setSaving(true)
+    setError("")
+    try {
+      if (!(await verifyPassword(current, data.account.password))) {
+        setError("La contraseña actual no es correcta. Revísala e inténtalo de nuevo.")
+        return
+      }
 
-    if (!(await verifyPassword(current, data.account.password))) {
-      setError("Contraseña incorrecta.")
-      return
+      update({ account: { ...data.account, password: await hashPassword(next) } })
+      appNotice("Contraseña actualizada")
+      setCurrent("")
+      setNext("")
+      setConfirm("")
+      close()
+    } catch {
+      setError("No se pudo actualizar la contraseña. Inténtalo de nuevo.")
+    } finally {
+      setSaving(false)
     }
-
-    update({ account: { ...data.account, password: await hashPassword(next) } })
-
-    appNotice("Contraseña actualizada.")
   }
 
   return (
@@ -4308,6 +4431,7 @@ export function PasswordChange({
           setError("")
         }}
         type="password"
+        autoComplete="current-password"
         error={error || undefined}
         required
       />
@@ -4316,10 +4440,13 @@ export function PasswordChange({
         value={next}
         onChange={setNext}
         type="password"
+        autoComplete="new-password"
         error={
           next && !validNext
             ? "Usa mínimo 8 caracteres, una letra y un número."
-            : undefined
+            : nextMatchesCurrent
+              ? "La nueva contraseña debe ser distinta de la actual."
+              : undefined
         }
         required
       />
@@ -4328,6 +4455,7 @@ export function PasswordChange({
         value={confirm}
         onChange={setConfirm}
         type="password"
+        autoComplete="new-password"
         error={
           confirm && next !== confirm
             ? "Las contraseñas no coinciden."
@@ -4335,17 +4463,9 @@ export function PasswordChange({
         }
         required
       />
-      <Button
-        disabled={
-          !data.account ||
-          !current ||
-          !validNext ||
-          next !== confirm ||
-          next === current
-        }
-        onClick={() => void save()}
-      >
-        Actualizar contraseña
+      {saving && <p className="info-status" role="status">Actualizando contraseña…</p>}
+      <Button disabled={!canSave} onClick={() => void save()}>
+        {saving ? "Guardando…" : "Actualizar contraseña"}
       </Button>
     </>
   )

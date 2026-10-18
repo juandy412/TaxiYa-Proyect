@@ -33,12 +33,28 @@ const english: Record<string, string> = {
 
   "Tipo de cuenta": "Account type",
 
+  "Elige tu tipo de cuenta": "Choose your account type",
+
   "¿Con qué tipo de cuenta vas a entrar?":
     "Which type of account are you using?",
 
   "Soy conductor": "I am a driver",
 
   "Acceso administración": "Administrator access",
+
+  "Entrar como pasajero · pide y consulta tus viajes.":
+    "Passenger access · request and review your rides.",
+
+  "Entrar como conductor · gestiona solicitudes y viajes.":
+    "Driver access · manage requests and rides.",
+
+  "Acceso de administrador · revisa conductores y reportes.":
+    "Administrator access · review drivers and reports.",
+
+  "¿Viajas o conduces? Elige tu perfil en el siguiente paso.":
+    "Are you riding or driving? Choose your profile in the next step.",
+
+  "Elegir destino en el mapa": "Choose destination on the map",
 
   "¿Primera vez en TaxiYa?": "New to TaxiYa?",
 

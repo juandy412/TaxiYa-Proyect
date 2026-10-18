@@ -8,11 +8,15 @@ export function PlaceAutocomplete({
   value,
   onChange,
   includeCurrent = true,
+  favorites = [],
+  recentPlaces = [],
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   includeCurrent?: boolean;
+  favorites?: { label: string; place: string }[];
+  recentPlaces?: string[];
 }) {
   const language = useContext(TaxiLauncherContext).language;
   const [open, setOpen] = useState(false);
@@ -26,6 +30,10 @@ export function PlaceAutocomplete({
         .toLocaleLowerCase("es")
         .includes(value.toLocaleLowerCase("es")),
   );
+  const recent = recentPlaces
+    .filter((place, index, all) => all.indexOf(place) === index)
+    .filter((place) => placesData.some((item) => item.name === place))
+    .slice(0, 4);
   const choose = (place: string) => {
     onChange(place);
     setOpen(false);
@@ -84,7 +92,41 @@ export function PlaceAutocomplete({
         />
       </div>
       {open && (
+        <>
+        {favorites.length > 0 && (
+          <div className="autocomplete-favorites" aria-label="Lugares favoritos">
+            {favorites.map((favorite) => (
+              <button
+                type="button"
+                className="favorite-place-chip"
+                key={favorite.label}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => choose(favorite.place)}
+              >
+                <b>{favorite.label}</b>
+                <span>{favorite.place}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <div className="autocomplete-list" id={listId} role="listbox" aria-label={`${translate(label, language)}: ${translate("sugerencias", language)}`}>
+          {value.trim() === "" && recent.length > 0 && (
+            <div className="autocomplete-recent">
+              <small>Recientes</small>
+              {recent.map((place) => (
+                <button
+                  type="button"
+                  className="autocomplete-option"
+                  key={place}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => choose(place)}
+                >
+                  <b>{place}</b>
+                  <small>Lugar visitado recientemente</small>
+                </button>
+              ))}
+            </div>
+          )}
           {results.length === 0 && <span className="autocomplete-empty">{translate("No hay lugares que coincidan.", language)}</span>}
           {results.map((place, index) => (
             <div
@@ -101,6 +143,7 @@ export function PlaceAutocomplete({
             </div>
           ))}
         </div>
+        </>
       )}
     </div>
   );

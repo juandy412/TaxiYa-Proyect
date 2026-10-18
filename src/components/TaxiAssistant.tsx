@@ -73,7 +73,7 @@ export function TaxiAssistant({
     data.chatTopic === "delay" && data.role === "driver",
   )
   const [loading, setLoading] = useState(false)
-  const [assistantError, setAssistantError] = useState(false)
+  const [assistantError, setAssistantError] = useState<"quota" | "">("")
   const [lastMessage, setLastMessage] = useState("")
   const [listening, setListening] = useState(false)
   const [voiceError, setVoiceError] = useState("")
@@ -824,7 +824,7 @@ export function TaxiAssistant({
 
     setLastMessage(value)
 
-    setAssistantError(false)
+    setAssistantError("")
 
     const normalized = value.toLocaleLowerCase("es")
 
@@ -850,13 +850,8 @@ export function TaxiAssistant({
 
     setLoading(true)
 
-    try {
-      const response = await fetch("/api/assistant", {
-        method: "POST",
-
-        headers: { "Content-Type": "application/json" },
-
-        body: JSON.stringify({
+    let quotaExceeded = false
+    const requestBody = JSON.stringify({
           message: sanitizeAssistantMessage(
             value,
             [
@@ -878,11 +873,51 @@ export function TaxiAssistant({
             origin: data.origin,
             destination: data.destination,
           },
-        }),
-      })
+        })
+    const request = async () => {
+      let lastError: unknown
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const response = await fetch("/api/assistant", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: requestBody,
+            signal: AbortSignal.timeout(25_000),
+          })
+          if (attempt === 0 && response.status >= 500) {
+            await response.body?.cancel()
+            await new Promise((resolve) => setTimeout(resolve, 450))
+            continue
+          }
+          return response
+        } catch (error) {
+          lastError = error
+          if (attempt === 1) throw error
+          await new Promise((resolve) => setTimeout(resolve, 450))
+        }
+      }
+      throw lastError instanceof Error
+        ? lastError
+        : new Error("El asistente remoto no está disponible.")
+    }
 
-      if (!response.ok)
+    try {
+      const response = await request()
+
+      if (!response.ok) {
+        const failure: unknown = await response.json().catch(() => null)
+        if (
+          response.status === 429 &&
+          failure &&
+          typeof failure === "object" &&
+          "error" in failure &&
+          failure.error &&
+          typeof failure.error === "object" &&
+          "code" in failure.error
+        )
+          quotaExceeded = failure.error.code === "QUOTA_EXCEEDED"
         throw new Error("El asistente remoto no está disponible.")
+      }
 
       const result: unknown = await response.json()
 
@@ -896,8 +931,7 @@ export function TaxiAssistant({
 
       applyAction(value, validated.reply, validated.action)
     } catch {
-      setAssistantError(true)
-
+      setAssistantError(quotaExceeded ? "quota" : "")
       handleLocal(value)
     } finally {
       setLoading(false)
@@ -1110,13 +1144,12 @@ export function TaxiAssistant({
               {translate("Taxi IA está escribiendo…", data.language)}
             </p>
           )}
-          {assistantError && (
+          {assistantError === "quota" && (
             <div className="assistant-error" role="status">
               <span>
-                {translate(
-                  "El asistente remoto alcanzó su límite o no está disponible. Te responderé con opciones locales.",
-                  data.language,
-                )}
+                {data.language === "en"
+                  ? "Gemini reached its usage limit. I will keep helping you with local options."
+                  : "Gemini alcanzó su límite de uso. Seguiré ayudándote con opciones locales."}
               </span>
               <button
                 type="button"

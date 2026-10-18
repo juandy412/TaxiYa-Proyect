@@ -1,9 +1,9 @@
 import { GoogleGenAI, Type, type Schema } from "@google/genai"
 import { createHash } from "node:crypto"
 
-import { placesData } from "../src/data/places"
+import { placesData } from "./_lib/places.js"
 
-import { sanitizeAssistantMessage } from "../src/lib/assistant"
+import { sanitizeAssistantMessage } from "./_lib/assistant.js"
 
 type Request = {
   method?: string
@@ -202,24 +202,8 @@ function parseAction(value: unknown): Action | null {
   }
 }
 
-function isQuotaError(error: unknown) {
-  if (!error || typeof error !== "object") return false
-
-  const candidate = error as {
-    status?: unknown
-    message?: unknown
-  }
-
-  return (
-    candidate.status === 429 ||
-    (typeof candidate.message === "string" &&
-      /(?:429|resource_exhausted|quota)/iu.test(candidate.message))
-  )
-}
-
 const rateWindowMs = 60_000
 const rateLimit = 20
-const requestsByIp = new Map<string, number[]>()
 
 function clientIp(request: Request) {
   const forwarded =
@@ -232,42 +216,63 @@ function clientIp(request: Request) {
 }
 
 async function isRateLimited(request: Request) {
-  const now = Date.now()
-  const ipHash = createHash("sha256").update(clientIp(request)).digest("hex")
   const redisUrl = process.env.UPSTASH_REDIS_REST_URL?.replace(/\/+$/u, "")
   const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN
 
-  if (redisUrl && redisToken) {
-    const script =
-      "local count = redis.call('INCR', KEYS[1]); if count == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]); end; return count"
-    const result = await fetch(`${redisUrl}/`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${redisToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(["EVAL", script, "1", `taxiya:assistant:${ipHash}`, String(rateWindowMs)]),
-      signal: AbortSignal.timeout(3000),
-    })
-    if (!result.ok) throw new Error("Rate-limit storage unavailable.")
-    const payload: unknown = await result.json()
-    if (!payload || typeof payload !== "object" || !("result" in payload))
-      throw new Error("Invalid rate-limit response.")
-    return Number((payload as { result: unknown }).result) > rateLimit
-  }
+  if (!redisUrl || !redisToken) return false
+  const ipHash = createHash("sha256").update(clientIp(request)).digest("hex")
+  const script =
+    "local count = redis.call('INCR', KEYS[1]); if count == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]); end; return count"
+  const result = await fetch(`${redisUrl}/`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${redisToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify([
+      "EVAL",
+      script,
+      "1",
+      `taxiya:assistant:${ipHash}`,
+      String(rateWindowMs),
+    ]),
+    signal: AbortSignal.timeout(3000),
+  })
+  if (!result.ok) throw new Error("Rate-limit storage unavailable.")
+  const payload: unknown = await result.json()
+  if (!payload || typeof payload !== "object" || !("result" in payload))
+    throw new Error("Invalid rate-limit response.")
+  return Number((payload as { result: unknown }).result) > rateLimit
+}
 
-  const recentRequests = (requestsByIp.get(ipHash) || []).filter(
-    (timestamp) => now - timestamp < rateWindowMs,
-  )
-  if (recentRequests.length >= rateLimit) return true
-  recentRequests.push(now)
-  requestsByIp.set(ipHash, recentRequests)
-  if (requestsByIp.size > 2_000) {
-    for (const [key, timestamps] of requestsByIp)
-      if (!timestamps.some((timestamp) => now - timestamp < rateWindowMs))
-        requestsByIp.delete(key)
+function geminiErrorDetails(error: unknown) {
+  if (!error || typeof error !== "object")
+    return { status: undefined as number | undefined, body: String(error) }
+
+  const candidate = error as {
+    status?: unknown
+    code?: unknown
+    message?: unknown
+    error?: unknown
+    response?: { status?: unknown; data?: unknown; body?: unknown }
   }
-  return false
+  const rawStatus =
+    candidate.status ??
+    candidate.response?.status ??
+    (typeof candidate.code === "number" ? candidate.code : undefined)
+  const status =
+    typeof rawStatus === "number"
+      ? rawStatus
+      : typeof rawStatus === "string" && /^\d{3}$/.test(rawStatus)
+        ? Number(rawStatus)
+        : undefined
+  const body =
+    candidate.response?.data ??
+    candidate.response?.body ??
+    candidate.error ??
+    candidate.message ??
+    error
+  return { status, body }
 }
 
 function jsonError(
@@ -301,34 +306,42 @@ export default async function handler(request: Request, response: Response) {
       "Envía el contenido como application/json.",
     )
 
-  try {
-    if (await isRateLimited(request)) {
-    response.setHeader?.("Retry-After", "60")
-    return jsonError(
-      response,
-      429,
-      "RATE_LIMITED",
-      "Has enviado muchas solicitudes. Espera un minuto e inténtalo de nuevo.",
-    )
+  if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+    try {
+      if (await isRateLimited(request)) {
+        response.setHeader?.("Retry-After", "60")
+        return jsonError(
+          response,
+          429,
+          "RATE_LIMITED",
+          "Has enviado muchas solicitudes. Espera un minuto e inténtalo de nuevo.",
+        )
+      }
+    } catch (error) {
+      console.error("[Taxi IA] Falló el limitador externo de solicitudes", error)
+      return jsonError(
+        response,
+        503,
+        "RATE_LIMIT_UNAVAILABLE",
+        "El servicio no está disponible por el momento.",
+      )
     }
-  } catch {
-    return jsonError(
-      response,
-      503,
-      "RATE_LIMIT_UNAVAILABLE",
-      "No pudimos validar el límite de solicitudes. Inténtalo de nuevo.",
-    )
   }
 
   const apiKey = process.env.GEMINI_API_KEY
 
-  if (!apiKey)
+  if (!apiKey) {
+    console.error("[Taxi IA Gemini] Falta GEMINI_API_KEY", {
+      status: 503,
+      message: "GEMINI_API_KEY no está configurada en el entorno del servidor.",
+    })
     return jsonError(
       response,
       503,
       "ASSISTANT_NOT_CONFIGURED",
       "El asistente remoto no está configurado.",
     )
+  }
 
   if (!request.body || typeof request.body !== "object")
     return jsonError(response, 400, "INVALID_BODY", "La solicitud no tiene un formato válido.")
@@ -426,10 +439,11 @@ export default async function handler(request: Request, response: Response) {
     "No solicites ni repitas nombres completos, teléfonos, correos o contraseñas. No intentes reconstruir los datos privados que hayan sido omitidos.",
   ].join(" ")
 
+  let result
   try {
     const ai = new GoogleGenAI({ apiKey })
 
-    const result = await ai.models.generateContent({
+    const makeRequest = () => ai.models.generateContent({
       model,
 
       contents: JSON.stringify({
@@ -468,6 +482,15 @@ export default async function handler(request: Request, response: Response) {
         responseSchema,
       },
     })
+    try {
+      result = await makeRequest()
+    } catch (firstError) {
+      const { status } = geminiErrorDetails(firstError)
+      if (status !== undefined && (status < 500 || status === 429))
+        throw firstError
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      result = await makeRequest()
+    }
 
     if (!result.text || result.text.length > 2_000)
       return jsonError(
@@ -518,12 +541,41 @@ export default async function handler(request: Request, response: Response) {
 
       .json({ reply: candidate.reply.trim().slice(0, 400), action })
   } catch (error) {
-    if (isQuotaError(error))
+    const { status, body } = geminiErrorDetails(error)
+    console.error("[Taxi IA Gemini] Error del modelo", { status, body })
+    if (status === 429)
       return jsonError(
         response,
         429,
         "QUOTA_EXCEEDED",
         "El asistente alcanzó su límite temporal de uso.",
+      )
+
+    if (status === 401 || status === 403)
+      return jsonError(
+        response,
+        502,
+        "GEMINI_AUTH_ERROR",
+        "El asistente no está disponible por el momento.",
+      )
+
+    if (status === 404)
+      return jsonError(
+        response,
+        502,
+        "GEMINI_MODEL_NOT_FOUND",
+        "El asistente no está disponible por el momento.",
+      )
+
+    if (
+      (error instanceof Error && error.name === "TimeoutError") ||
+      (error instanceof Error && /timeout|network|fetch failed/iu.test(error.message))
+    )
+      return jsonError(
+        response,
+        504,
+        "GEMINI_TIMEOUT_OR_NETWORK",
+        "El asistente no respondió a tiempo.",
       )
 
     return jsonError(

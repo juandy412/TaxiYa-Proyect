@@ -1,11 +1,12 @@
-import { useState } from "react";
-import type { Stored, Update } from "../../lib/types";
+import { type ReactNode, useState } from "react";
+import type { DriverDocument, Stored, Update } from "../../lib/types";
 import { appNotice, initials, newNotification } from "../../lib/format";
 import { Button, Empty, Field, Header, Icon } from "../../components";
+import { LogoutButton } from "../../components/LogoutButton";
 
 type AdminSection = "Resumen" | "Conductores" | "Tarifas" | "Reportes" | "Viajes" | "Seguridad";
 
-export function Admin({ data, update, go }: { data: Stored; update: Update; go: (screen: "welcome") => void }) {
+export function Admin({ data, update, go, setModal }: { data: Stored; update: Update; go: (screen: "welcome") => void; setModal: (content: ReactNode) => void }) {
   const [section, setSection] = useState<AdminSection>("Resumen");
   const [selected, setSelected] = useState("");
   const [response, setResponse] = useState("");
@@ -14,6 +15,22 @@ export function Admin({ data, update, go }: { data: Stored; update: Update; go: 
   const openComplaints = data.complaints.filter((item) => item.status === "Abierta");
   const activeTrips = ["assigned", "enroute", "active"].includes(data.tripStatus) ? 1 : 0;
   const driverRegistered = Boolean(data.driverAccount.email && data.driverAccount.name);
+  const driverPhoto = data.driverDocuments.find(
+    (document) => document.name === "Foto del conductor",
+  )?.dataUrl;
+  const previewDocument = (document: DriverDocument) => {
+    if (document.dataUrl) openDocumentPreview(document.name, document.dataUrl);
+  };
+  const openDocumentPreview = (title: string, dataUrl: string) =>
+    setModal(
+      <div className="admin-image-preview">
+        <h2>{title}</h2>
+        <img src={dataUrl} alt={title} />
+        <Button variant="secondary" onClick={() => setModal(null)}>
+          Cerrar vista previa
+        </Button>
+      </div>,
+    );
 
   const changeFare = (patch: Partial<Stored>) => {
     if (patch.fareZoneMin !== undefined && patch.fareZoneMin <= 0) { appNotice("El mínimo debe ser mayor que cero."); return; }
@@ -48,7 +65,7 @@ export function Admin({ data, update, go }: { data: Stored; update: Update; go: 
   ];
 
   return <section className="admin-shell">
-    <Header title="Administración" action={<button className="demo-link" onClick={() => { update({ loggedIn: false, online: false, onlineStartedAt: null }); go("welcome"); }}>Cerrar sesión</button>} />
+    <Header title="Administración" action={<LogoutButton appearance="header" update={update} setModal={setModal} go={() => go("welcome")} />} />
     <div className="page admin-page">
       <div className="admin-welcome"><span className="admin-mark"><Icon name="shield" size={25} /></span><div><p className="eyebrow">TAXIYA OCAÑA</p><h1>Centro de control</h1><p className="muted">Gestiona las operaciones desde secciones independientes.</p></div></div>
       <nav className="admin-tabs" aria-label="Secciones de administración">{sections.map((item) => <button key={item.label} className={section === item.label ? "active" : ""} aria-current={section === item.label ? "page" : undefined} onClick={() => setSection(item.label)}><Icon name={item.icon} size={18} /><span>{item.label}</span></button>)}</nav>
@@ -68,8 +85,21 @@ export function Admin({ data, update, go }: { data: Stored; update: Update; go: 
       {section === "Conductores" && <div className="admin-section">
         <p className="section-label">VALIDACIÓN DE CUENTAS</p><h2>Registro de conductores</h2>
         {!driverRegistered ? <Empty icon="car" title="Sin solicitudes de registro" text="Los registros de conductores aparecerán aquí cuando se envíen desde la app." /> : <div className="admin-card">
-          <div className="admin-driver-card"><span className="driver-photo">{initials(data.driverAccount.name)}</span><span><b>{data.driverAccount.name}</b><small>{data.driverAccount.email}</small><small>{data.vehicle.make || "Vehículo sin completar"} {data.vehicle.plate ? `· ${data.vehicle.plate}` : ""}</small></span><span className={`status-pill ${data.driverVerification === "Aprobado" ? "approved" : data.driverVerification === "Rechazado" ? "rejected" : "pending"}`}>{data.driverVerification}</span></div>
-          <div className="document-list">{(data.driverDocuments.length ? data.driverDocuments : [{ name: "Documentos no enviados", uploaded: false }]).map((document) => <span key={document.name}><Icon name={document.uploaded ? "check" : "help"} /><b>{document.name}</b><small>{document.uploaded ? "Recibido" : "Pendiente"}</small></span>)}</div>
+          <div className="admin-driver-card">
+            {driverPhoto ? (
+              <button
+                type="button"
+                className="admin-driver-photo-thumb"
+                aria-label="Ampliar foto del conductor"
+                onClick={() => {
+                  openDocumentPreview("Foto del conductor", driverPhoto)
+                }}
+              >
+                <img src={driverPhoto} alt="" />
+              </button>
+            ) : <span className="driver-photo">{initials(data.driverAccount.name)}</span>}
+            <span><b>{data.driverAccount.name}</b><small>{data.driverAccount.email}</small><small>{data.vehicle.make || "Vehículo sin completar"} {data.vehicle.plate ? `· ${data.vehicle.plate}` : ""}</small></span><span className={`status-pill ${data.driverVerification === "Aprobado" ? "approved" : data.driverVerification === "Rechazado" ? "rejected" : "pending"}`}>{data.driverVerification}</span></div>
+          <div className="document-list">{(data.driverDocuments.length ? data.driverDocuments : [{ name: "Documentos no enviados", uploaded: false }]).map((document) => <span key={document.name}><Icon name={document.uploaded ? "check" : "help"} /><b>{document.name}</b><small>{document.uploaded ? "Recibido" : "Pendiente"}</small>{document.dataUrl && <button type="button" className="admin-document-thumb" aria-label={`Ampliar ${document.name}`} onClick={() => previewDocument(document)}><img src={document.dataUrl} alt="" /></button>}</span>)}</div>
           {data.driverVerification === "Pendiente" || data.driverVerification === "Rechazado" ? <><Field label="Motivo del rechazo (si corresponde)" value={rejectionReason} onChange={setRejectionReason} placeholder="Explica qué debe corregirse" /><div className="action-row two"><Button variant="secondary" onClick={() => verify("Rechazado")} disabled={!rejectionReason.trim()}>Solicitar correcciones</Button><Button onClick={() => verify("Aprobado")}>Aprobar conductor</Button></div></> : <p className="info-status">Cuenta revisada. Puedes cambiar el estado si se actualizan los documentos.</p>}
         </div>}
         <div className="admin-note"><Icon name="shield" /><span><b>Revisión responsable</b><small>Comprueba la vigencia de licencia, SOAT y tarjeta de propiedad antes de aprobar.</small></span></div>

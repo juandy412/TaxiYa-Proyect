@@ -26,6 +26,7 @@ import {
 } from "../../components"
 
 import { MapView } from "../../components/MapView"
+import { LogoutButton } from "../../components/LogoutButton"
 
 import { assignDriver, cancelTrip, finishTrip } from "../../lib/trip"
 
@@ -42,6 +43,36 @@ import {
   Report,
   SOS,
 } from "../passenger"
+
+function resizeDriverPhoto(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error("No se pudo leer la imagen."))
+    reader.onload = () => {
+      if (typeof reader.result !== "string") {
+        reject(new Error("El archivo no contiene una imagen válida."))
+        return
+      }
+      const image = new Image()
+      image.onerror = () => reject(new Error("No se pudo abrir la imagen."))
+      image.onload = () => {
+        const scale = Math.min(1, 400 / Math.max(image.naturalWidth, image.naturalHeight))
+        const canvas = document.createElement("canvas")
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale))
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale))
+        const context = canvas.getContext("2d")
+        if (!context) {
+          reject(new Error("No se pudo preparar la imagen."))
+          return
+        }
+        context.drawImage(image, 0, 0, canvas.width, canvas.height)
+        resolve(canvas.toDataURL("image/jpeg", 0.8))
+      }
+      image.src = reader.result
+    }
+    reader.readAsDataURL(file)
+  })
+}
 
 export function DriverHome({
   data,
@@ -1088,20 +1119,7 @@ export function DriverProfile({
 }) {
   return (
     <section>
-      <Header
-        title="Perfil de conductor"
-        action={
-          <button
-            className="demo-link"
-            onClick={() => {
-              update({ loggedIn: false, online: false, onlineStartedAt: null })
-              go("welcome")
-            }}
-          >
-            Cerrar sesión
-          </button>
-        }
-      />
+      <Header title="Perfil de conductor" />
       <div className="page profile-page">
         <div className="profile-head">
           <div className="profile-photo">
@@ -1139,6 +1157,11 @@ export function DriverProfile({
             icon="help"
             label="Ayuda y soporte"
             onClick={() => go("support")}
+          />
+          <LogoutButton
+            update={update}
+            setModal={setModal}
+            go={() => go("welcome")}
           />
         </div>
         <p className="section-label">AJUSTES</p>
@@ -1253,20 +1276,33 @@ export function DriverRegister({
   const [vehicle, setVehicle] = useState({ make: "", color: "", plate: "" })
 
   const [documents, setDocuments] = useState<DriverDocument[]>(
-    ["Licencia", "SOAT", "Tarjeta de propiedad", "Foto del vehículo"].map(
-      (name) => ({ name, uploaded: false }),
-    ),
+    data.driverDocuments.length
+      ? data.driverDocuments.some((document) => document.name === "Foto del conductor")
+        ? data.driverDocuments
+        : [
+            { name: "Foto del conductor", uploaded: false },
+            ...data.driverDocuments,
+          ]
+      : ["Foto del conductor", "Licencia", "SOAT", "Tarjeta de propiedad", "Foto del vehículo"].map(
+          (name) => ({ name, uploaded: false }),
+        ),
   )
 
   const [previews, setPreviews] = useState<
     Record<string, { url: string; type: string; fileName: string }>
-  >({})
-  const previewsRef = useRef(previews)
-  previewsRef.current = previews
-
-  useEffect(
-    () => () => Object.values(previewsRef.current).forEach((preview) => URL.revokeObjectURL(preview.url)),
-    [],
+  >(() =>
+    Object.fromEntries(
+      data.driverDocuments
+        .filter((document) => document.dataUrl)
+        .map((document) => [
+          document.name,
+          {
+            url: document.dataUrl || "",
+            type: "image/jpeg",
+            fileName: document.fileName || document.name,
+          },
+        ]),
+    ),
   )
 
   const [registrationError, setRegistrationError] = useState("")
@@ -1491,33 +1527,65 @@ export function DriverRegister({
                     onChange={(event) => {
                       const file = event.currentTarget.files?.[0]
                       if (!file) return
-                      const previous = previews[document.name]
-                      if (previous) URL.revokeObjectURL(previous.url)
-                      const preview = {
-                        url: URL.createObjectURL(file),
-                        type: file.type,
-                        fileName: file.name,
-                      }
-                      previewsRef.current = {
-                        ...previewsRef.current,
-                        [document.name]: preview,
-                      }
-                      setPreviews((current) => ({
-                        ...current,
-                        [document.name]: preview,
-                      }))
-                      setDocuments((current) =>
-                        current.map((item, itemIndex) =>
-                          itemIndex === index
-                            ? {
-                                ...item,
-                                uploaded: true,
+                      const input = event.currentTarget
+                      void (async () => {
+                        try {
+                          setRegistrationError("")
+                          if (file.type.startsWith("image/")) {
+                            const dataUrl = await resizeDriverPhoto(file)
+                            const preview = {
+                              url: dataUrl,
+                              type: "image/jpeg",
+                              fileName: file.name,
+                            }
+                            setPreviews((current) => ({
+                              ...current,
+                              [document.name]: preview,
+                            }))
+                            setDocuments((current) =>
+                              current.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? {
+                                      ...item,
+                                      uploaded: true,
+                                      fileName: file.name,
+                                      fileType: "image/jpeg",
+                                      dataUrl,
+                                    }
+                                  : item,
+                              ),
+                            )
+                          } else if (file.type === "application/pdf") {
+                            setPreviews((current) => ({
+                              ...current,
+                              [document.name]: {
+                                url: "",
+                                type: file.type,
                                 fileName: file.name,
-                                fileType: file.type,
-                              }
-                            : item,
-                        ),
-                      )
+                              },
+                            }))
+                            setDocuments((current) =>
+                              current.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? {
+                                      ...item,
+                                      uploaded: true,
+                                      fileName: file.name,
+                                      fileType: file.type,
+                                      dataUrl: undefined,
+                                    }
+                                  : item,
+                              ),
+                            )
+                          } else {
+                            setRegistrationError("Elige una imagen o un archivo PDF.")
+                          }
+                        } catch {
+                          setRegistrationError("No se pudo procesar el archivo. Prueba con otra imagen.")
+                        } finally {
+                          input.value = ""
+                        }
+                      })()
                     }}
                   />
                   <small>{previews[document.name]?.fileName || document.fileName || "Aún no seleccionado"}</small>
@@ -1529,9 +1597,7 @@ export function DriverRegister({
                     />
                   )}
                   {previews[document.name]?.type === "application/pdf" && (
-                    <a href={previews[document.name].url} target="_blank" rel="noreferrer">
-                      Abrir vista previa del PDF
-                    </a>
+                    <small>PDF seleccionado; se conserva su nombre para la revisión de demostración.</small>
                   )}
                 </div>
               ))}

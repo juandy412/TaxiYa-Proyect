@@ -978,7 +978,7 @@ function App() {
         )
 
       case "admin":
-        return <Admin data={data} update={update} go={go} />
+        return <Admin data={data} update={update} go={go} setModal={setModal} />
 
       default:
         return null

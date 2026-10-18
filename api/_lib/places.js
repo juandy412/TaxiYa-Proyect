@@ -1,0 +1,15 @@
+export const placesData = [
+  { name: "Parque 29 de Mayo" },
+  { name: "Terminal de Transporte" },
+  { name: "Hospital Emiro Quintero" },
+  { name: "UFPS Ocaña" },
+  { name: "Centro" },
+  { name: "Clínica Ocaña" },
+  { name: "Plaza del Mercado" },
+  { name: "Barrio El Llano" },
+  { name: "Parque San Francisco" },
+  { name: "Columna de la Libertad de los Esclavos" },
+  { name: "Museo Antón García de Bonilla" },
+  { name: "Iglesia San Agustín" },
+  { name: "Barrio San Agustín" },
+]
