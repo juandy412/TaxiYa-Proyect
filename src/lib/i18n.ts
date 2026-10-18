@@ -33,6 +33,63 @@ const english: Record<string, string> = {
 
   "Tipo de cuenta": "Account type",
 
+  "¿Con qué tipo de cuenta vas a entrar?":
+    "Which type of account are you using?",
+
+  "Soy conductor": "I am a driver",
+
+  "Acceso administración": "Administrator access",
+
+  "¿Primera vez en TaxiYa?": "New to TaxiYa?",
+
+  "Crear cuenta de pasajero": "Create passenger account",
+
+  "Crear cuenta de conductor": "Create driver account",
+
+  "Crear acceso de administrador": "Create administrator access",
+
+  "Solo para quien administra la aplicación.":
+    "For people who administer the app.",
+
+  "Elige qué cuenta quieres crear. Te guiaremos paso a paso.":
+    "Choose the account you want to create. We will guide you step by step.",
+
+  "Pide taxis y consulta tus viajes. El registro tiene 2 pasos.":
+    "Request rides and check your trips. Registration has 2 steps.",
+
+  "Registra tus datos y vehículo. El proceso tiene 3 pasos.":
+    "Add your details and vehicle. Registration has 3 steps.",
+
+  "Continuar como pasajero": "Continue as passenger",
+
+  "Continuar como conductor": "Continue as driver",
+
+  "Mueve y acerca el mapa. Toca un punto marcado o elige un lugar de la lista.":
+    "Pan and zoom the map. Tap a marker or choose a place from the list.",
+
+  "Controles del mapa": "Map controls",
+
+  "Acercar mapa": "Zoom in",
+
+  "Alejar mapa": "Zoom out",
+
+  "Mostrar mi ubicación": "Show my location",
+
+  "Acerca el mapa para elegir entre estos lugares.":
+    "Zoom in to choose between these places.",
+
+  "Este navegador no puede compartir tu ubicación.":
+    "This browser cannot share your location.",
+
+  "No pudimos obtener tu ubicación. Revisa el permiso del navegador.":
+    "We couldn't get your location. Check your browser permission.",
+
+  "Tu ubicación en este dispositivo.": "Your location on this device.",
+
+  "Paso 1 de 2": "Step 1 of 2",
+
+  "Paso 2 de 2": "Step 2 of 2",
+
   Conductor: "Driver",
 
   Administrador: "Administrator",

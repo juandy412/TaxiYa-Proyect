@@ -169,8 +169,10 @@ const guardScreen = (wanted: Screen, data: Stored): Screen => {
   if (!data.loggedIn)
     return PUBLIC_SCREENS.includes(wanted) ? wanted : "welcome"
 
-  if (PUBLIC_SCREENS.includes(wanted) || wanted === "permission")
-    return homeFor(data.role)
+  if (PUBLIC_SCREENS.includes(wanted)) return homeFor(data.role)
+
+  if (wanted === "permission")
+    return data.role === "passenger" ? wanted : homeFor(data.role)
 
   if (wanted === "admin")
     return data.role === "admin" ? wanted : homeFor(data.role)

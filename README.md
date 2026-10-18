@@ -13,6 +13,10 @@ Aplicación móvil demostrativa para pasajeros, conductores y administración. E
 
 `pnpm build` ejecuta primero TypeScript (`tsc --noEmit`) y luego el build de Vite.
 
+## Auditoría de interfaz
+
+Instala las dependencias con `pnpm install` y ejecuta `pnpm exec playwright install chromium` una vez. Luego corre `pnpm audit:ui`. El script recorre las pantallas públicas y las rutas de los tres roles en 360×640, 375×667, 393×852, 412×915 y 430×932; verifica modo claro, oscuro y texto grande, solapamientos, elementos tapados, botones menores de 44×44, texto desbordado y desbordamiento horizontal. Si prefieres usar una instancia ya iniciada, define `AUDIT_BASE_URL` antes de ejecutarlo.
+
 ## Asistente Taxi IA
 
 La interfaz envía el último mensaje y el contexto mínimo del viaje (rol, idioma, pantalla, estado y lugares guardados) a `POST /api/assistant`. La función serverless de Vercel usa el SDK oficial `@google/genai` y exige JSON estructurado `{ reply, action }` mediante `responseMimeType: "application/json"` y `responseSchema`. El mensaje se sanea para omitir teléfonos, correos, contraseñas y nombres completos indicados en frases comunes; los datos de cuenta nunca se adjuntan al contexto. La clave solo se lee en el servidor y no se incluye en el bundle del navegador.
@@ -57,4 +61,4 @@ El formulario “Olvidé mi contraseña” no envía códigos ni permite recuper
 
 ## Mapas y referencias
 
-Los mapas de calles usan CARTO/OpenStreetMap y requieren conexión. Las nuevas coordenadas de lugares se consultaron en Nominatim/OpenStreetMap; las coordenadas previas de zonas amplias se conservan marcadas como aproximadas. No es un localizador de direcciones ni hay seguimiento GPS en vivo. No calcules recorridos reales con estas estimaciones.
+Los mapas de calles usan teselas de OpenStreetMap y requieren conexión; el mapa interactivo permite acercar, alejar, moverse, seleccionar puntos de referencia y centrar la vista en tu ubicación si das permiso al navegador. La ubicación no se envía a TaxiYa. Las nuevas coordenadas de lugares se consultaron en Nominatim/OpenStreetMap; las coordenadas previas de zonas amplias se conservan marcadas como aproximadas. No es un localizador de direcciones ni hay seguimiento GPS en vivo. No calcules recorridos reales con estas estimaciones.

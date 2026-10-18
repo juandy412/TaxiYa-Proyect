@@ -248,6 +248,9 @@ export function Field({
   inputRef,
   maxLength,
   required = false,
+  autoComplete,
+  inputMode,
+  errorAction,
 }: {
   label: string
   value: string
@@ -259,6 +262,9 @@ export function Field({
   inputRef?: React.RefObject<HTMLInputElement | null>
   maxLength?: number
   required?: boolean
+  autoComplete?: string
+  inputMode?: "none" | "text" | "tel" | "url" | "email" | "numeric" | "decimal" | "search"
+  errorAction?: { label: string; onClick: () => void }
 }) {
   const [visible, setVisible] = useState(false)
 
@@ -286,6 +292,8 @@ export function Field({
           }
           maxLength={maxLength}
           required={required}
+          autoComplete={autoComplete}
+          inputMode={inputMode}
           aria-invalid={!!error}
         />
         {type === "password" && (
@@ -302,7 +310,16 @@ export function Field({
           </button>
         )}
       </div>
-      {error && <small className="error">{translate(error, language)}</small>}
+      {error && (
+        <small className="error field-error-message" role="alert">
+          <span>{translate(error, language)}</span>
+          {errorAction && (
+            <button type="button" onClick={errorAction.onClick}>
+              {translate(errorAction.label, language)}
+            </button>
+          )}
+        </small>
+      )}
     </label>
   )
 }
@@ -319,7 +336,6 @@ export function TaxiHeaderButton({ dark = false }: { dark?: boolean }) {
       aria-label={translate("Abrir el asistente TaxiYa", taxi.language)}
     >
       <Icon name="assistant" />
-      <span>{translate("Taxi IA", taxi.language)}</span>
     </button>
   )
 }
@@ -379,7 +395,6 @@ export function ModalShell({
       "button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex='-1'])"
 
     const focusable = modal?.querySelectorAll<HTMLElement>(focusableSelector)
-
     ;(focusable?.[0] || modal)?.focus()
 
     const trap = (event: KeyboardEvent) => {

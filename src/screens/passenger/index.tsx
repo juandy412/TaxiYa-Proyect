@@ -28,7 +28,7 @@ import { drivers } from "../../data/drivers"
 import { farePlaces, pickupPoints, places } from "../../data/places"
 
 import { fareFor, samePlace } from "../../lib/fare"
-import { canonicalPlaceName } from "../../data/places";
+import { canonicalPlaceName } from "../../data/places"
 
 import {
   appNotice,
@@ -58,13 +58,17 @@ import {
   TaxiLauncherContext,
 } from "../../components"
 
-import { MapView } from "../../components/MapView"
+import { MapView, type MapViewControls } from "../../components/MapView"
 
 import { PlaceAutocomplete } from "../../components/PlaceAutocomplete"
 
 import { assignDriver, cancelTrip, finishTrip, startTrip } from "../../lib/trip"
 
 import { hashPassword, verifyPassword } from "../../lib/password"
+
+type StoredUpdateProps = { data: Stored; update: Update }
+
+type ThanksProps = { go: (s: Screen) => void; data: Stored }
 
 export function Welcome({
   go,
@@ -187,6 +191,7 @@ export function RoleChips({
       aria-label={translate("Tipo de cuenta", language)}
     >
       <button
+        type="button"
         aria-pressed={role === "passenger"}
         className={role === "passenger" ? "active" : ""}
         onClick={() => setRole("passenger")}
@@ -194,18 +199,12 @@ export function RoleChips({
         {translate("Pasajero", language)}
       </button>
       <button
+        type="button"
         aria-pressed={role === "driver"}
         className={role === "driver" ? "active" : ""}
         onClick={() => setRole("driver")}
       >
-        {translate("Conductor", language)}
-      </button>
-      <button
-        aria-pressed={role === "admin"}
-        className={role === "admin" ? "active" : ""}
-        onClick={() => setRole("admin")}
-      >
-        Admin
+        {translate("Soy conductor", language)}
       </button>
     </div>
   )
@@ -315,9 +314,9 @@ export function Login({
         : "register"
 
   return (
-    <section>
+    <section className="login-screen">
       <Header title="Iniciar sesión" back={() => go("welcome")} />
-      <div className="page auth-page">
+      <div className="page auth-page login-page">
         <Logo />
         <div>
           <h1>{translate("Qué bueno verte", data.language)}</h1>
@@ -330,58 +329,96 @@ export function Login({
         </div>
         <div className="login-role-picker">
           <span className="field-label">
-            {translate("Ingresa como", data.language)}
+            {translate("¿Con qué tipo de cuenta vas a entrar?", data.language)}
           </span>
           <RoleChips role={role} setRole={selectRole} />
-        </div>
-        <form onSubmit={submit} className="form" noValidate>
-          <Field
-            label="Correo electrónico"
-            value={email}
-            onChange={(value) => {
-              setEmail(value)
-              setErrors((current) => ({ ...current, email: "" }))
-            }}
-            placeholder="nombre@correo.com"
-            error={errors.email}
-            inputRef={emailRef}
-            required
-          />
-          {errors.email?.startsWith("No encontramos") && (
-            <Button variant="secondary" onClick={() => go(registrationScreen)}>
-              Crear cuenta
-            </Button>
-          )}
-          <Field
-            label="Contraseña"
-            value={password}
-            onChange={(value) => {
-              setPassword(value)
-              setErrors((current) => ({ ...current, password: "" }))
-            }}
-            type="password"
-            error={errors.password}
-            inputRef={passwordRef}
-            required
-          />
           <button
             type="button"
-            className="text-link align-right"
-            onClick={() => go("forgot")}
+            className={`login-admin-option ${role === "admin" ? "active" : ""}`}
+            aria-pressed={role === "admin"}
+            onClick={() => selectRole("admin")}
           >
-            {translate("¿Olvidaste tu contraseña?", data.language)}
+            <Icon name="settings" />
+            <span>
+              <b>{translate("Acceso administración", data.language)}</b>
+              <small>
+                {translate(
+                  "Solo para quien administra la aplicación.",
+                  data.language,
+                )}
+              </small>
+            </span>
+            <span className="login-admin-indicator" aria-hidden="true" />
           </button>
-          <Button type="submit">Continuar</Button>
+        </div>
+        <form onSubmit={submit} className="form login-form" noValidate>
+          <div className="login-fields">
+            <Field
+              label="Correo electrónico"
+              value={email}
+              onChange={(value) => {
+                setEmail(value)
+                setErrors((current) => ({ ...current, email: "" }))
+              }}
+              placeholder="nombre@correo.com"
+              type="email"
+              autoComplete="username"
+              inputMode="email"
+              error={errors.email}
+              errorAction={
+                errors.email?.startsWith("No encontramos")
+                  ? {
+                      label: "Crear cuenta",
+                      onClick: () => go(registrationScreen),
+                    }
+                  : undefined
+              }
+              inputRef={emailRef}
+              required
+            />
+            <Field
+              label="Contraseña"
+              value={password}
+              onChange={(value) => {
+                setPassword(value)
+                setErrors((current) => ({ ...current, password: "" }))
+              }}
+              type="password"
+              autoComplete="current-password"
+              error={errors.password}
+              inputRef={passwordRef}
+              required
+            />
+            <button
+              type="button"
+              className="text-link align-right"
+              onClick={() => go("forgot")}
+            >
+              {translate("¿Olvidaste tu contraseña?", data.language)}
+            </button>
+          </div>
+          <div className="sticky-form-action login-submit">
+            <Button type="submit">Continuar</Button>
+          </div>
         </form>
-        <p className="center muted">
-          {translate("¿Aún no tienes cuenta?", data.language)}{" "}
-          <button
-            className="inline-link"
-            onClick={() => go(registrationScreen)}
-          >
-            {translate("Regístrate aquí", data.language)}
-          </button>
-        </p>
+        <div className="login-footer">
+          <p className="center muted">
+            {translate("¿Primera vez en TaxiYa?", data.language)}{" "}
+            <button
+              className="inline-link"
+              onClick={() => go(registrationScreen)}
+            >
+              {translate(
+                role === "driver"
+                  ? "Crear cuenta de conductor"
+                  : role === "admin"
+                    ? "Crear acceso de administrador"
+                    : "Crear cuenta de pasajero",
+                data.language,
+              )}
+            </button>
+          </p>
+        </div>
       </div>
     </section>
   )
@@ -396,7 +433,9 @@ export function Register({
   go: (s: Screen) => void
   update: Update
 }) {
-  const [selectedRole, setSelectedRole] = useState<Role | null>(null)
+  const [selectedRole, setSelectedRole] = useState<Role>("passenger")
+
+  const [choosingRole, setChoosingRole] = useState(true)
 
   const [step, setStep] = useState(1)
 
@@ -429,14 +468,9 @@ export function Register({
       return
     }
 
-    if (selectedRole === "admin") {
-      update({ role: "admin" })
-      go("admin-register")
-      return
-    }
-
     if (selectedRole === "passenger") {
       update({ role: "passenger" })
+      setChoosingRole(false)
       return
     }
   }
@@ -522,21 +556,19 @@ export function Register({
   }
 
   return (
-    <section>
+    <section className="register-screen">
       <Header
-        title={
-          selectedRole === null ? "Crear cuenta" : `Crear cuenta · ${step} de 2`
-        }
+        title={choosingRole ? "Crear cuenta" : `Crear cuenta · ${step} de 2`}
         back={() =>
-          selectedRole !== null
+          !choosingRole
             ? step === 2
               ? setStep(1)
-              : setSelectedRole(null)
+              : setChoosingRole(true)
             : go("welcome")
         }
       />
-      <div className="page">
-        {selectedRole === null ? (
+      <div className="page register-page">
+        {choosingRole ? (
           <div className="registration-choice">
             <span className="feature-icon">
               <Icon name="user" />
@@ -544,7 +576,7 @@ export function Register({
             <h1>{translate("¿Cómo quieres usar TaxiYa?", data.language)}</h1>
             <p className="muted">
               {translate(
-                "Elige un tipo de cuenta. Podrás cambiar de rol al iniciar sesión.",
+                "Elige qué cuenta quieres crear. Te guiaremos paso a paso.",
                 data.language,
               )}
             </p>
@@ -571,7 +603,7 @@ export function Register({
                   <b>{translate("Pasajero", data.language)}</b>
                   <small>
                     {translate(
-                      "Solicita viajes y gestiona tus trayectos.",
+                      "Pide taxis y consulta tus viajes. El registro tiene 2 pasos.",
                       data.language,
                     )}
                   </small>
@@ -592,43 +624,35 @@ export function Register({
                   <b>{translate("Conductor", data.language)}</b>
                   <small>
                     {translate(
-                      "Registra tu vehículo y recibe solicitudes.",
-                      data.language,
-                    )}
-                  </small>
-                </span>
-              </button>
-              <button
-                type="button"
-                aria-pressed={selectedRole === "admin"}
-                className={
-                  selectedRole === "admin"
-                    ? "registration-role active"
-                    : "registration-role"
-                }
-                onClick={() => setSelectedRole("admin")}
-              >
-                <Icon name="settings" />
-                <span>
-                  <b>{translate("Administrador", data.language)}</b>
-                  <small>
-                    {translate(
-                      "Revisa registros y configuración local.",
+                      "Registra tus datos y vehículo. El proceso tiene 3 pasos.",
                       data.language,
                     )}
                   </small>
                 </span>
               </button>
             </div>
-            <Button disabled={!selectedRole} onClick={continueWithRole}>
-              Continuar
-            </Button>
+            <div className="sticky-form-action">
+              <Button onClick={continueWithRole}>
+                {translate(
+                  selectedRole === "passenger"
+                    ? "Continuar como pasajero"
+                    : "Continuar como conductor",
+                  data.language,
+                )}
+              </Button>
+            </div>
           </div>
         ) : (
           <>
             <div className="progress">
               <span style={{ width: `${step * 50}%` }} />
             </div>
+            <p className="registration-step">
+              {translate(
+                step === 1 ? "Paso 1 de 2" : "Paso 2 de 2",
+                data.language,
+              )}
+            </p>
             <h1>
               {translate(
                 step === 1 ? "Tus datos" : "Viaja con más tranquilidad",
@@ -643,211 +667,230 @@ export function Register({
                 data.language,
               )}
             </p>
-            <form onSubmit={next} className="form" noValidate>
-              {step === 1 ? (
-                <>
-                  <Field
-                    label="Nombre completo"
-                    value={fields.name}
-                    onChange={(v) => change("name", v)}
-                    error={errors.name}
-                    inputRef={first}
-                    required
-                  />
-                  <Field
-                    label="Celular"
-                    value={fields.phone}
-                    onChange={(v) => change("phone", v.replace(/\D/g, ""))}
-                    placeholder="3000000000"
-                    error={errors.phone}
-                    maxLength={10}
-                    required
-                  />
-                  <Field
-                    label="Correo electrónico"
-                    value={fields.email}
-                    onChange={(v) => change("email", v)}
-                    error={errors.email}
-                    required
-                  />
-                  <Field
-                    label="Contraseña"
-                    value={fields.pass}
-                    onChange={(v) => change("pass", v)}
-                    type="password"
-                    error={errors.pass}
-                    required
-                  />
-                  <Field
-                    label="Confirmar contraseña"
-                    value={fields.confirm}
-                    onChange={(v) => change("confirm", v)}
-                    type="password"
-                    error={errors.confirm}
-                    required
-                  />
-                  <label className="field">
-                    <span>
-                      {translate(
-                        "¿Cómo prefieres que te llamemos? (opcional)",
-                        data.language,
-                      )}
-                    </span>
-                    <select
-                      value={fields.preference}
-                      onChange={(e) => change("preference", e.target.value)}
-                    >
-                      <option value="Pasajera">
-                        {data.language === "en" ? "She/her" : "Pasajera"}
-                      </option>
-                      <option value="Pasajero">
-                        {data.language === "en" ? "He/him" : "Pasajero"}
-                      </option>
-                      <option value="Prefiero no decirlo">
-                        {translate("Prefiero no decirlo", data.language)}
-                      </option>
-                    </select>
-                  </label>
-                </>
-              ) : (
-                <>
-                  <div className="info-card">
-                    <Icon name="shield" />
-                    <p>
-                      <b>{translate("Contacto de confianza", data.language)}</b>
-                      <br />
-                      <span className="muted">
+            <form onSubmit={next} className="form register-form" noValidate>
+              <div className="register-fields">
+                {step === 1 ? (
+                  <>
+                    <Field
+                      label="Nombre completo"
+                      value={fields.name}
+                      onChange={(v) => change("name", v)}
+                      error={errors.name}
+                      autoComplete="name"
+                      inputRef={first}
+                      required
+                    />
+                    <Field
+                      label="Celular"
+                      value={fields.phone}
+                      onChange={(v) => change("phone", v.replace(/\D/g, ""))}
+                      placeholder="3000000000"
+                      error={errors.phone}
+                      type="tel"
+                      autoComplete="tel"
+                      inputMode="numeric"
+                      maxLength={10}
+                      required
+                    />
+                    <Field
+                      label="Correo electrónico"
+                      value={fields.email}
+                      onChange={(v) => change("email", v)}
+                      error={errors.email}
+                      type="email"
+                      autoComplete="email"
+                      inputMode="email"
+                      required
+                    />
+                    <Field
+                      label="Contraseña"
+                      value={fields.pass}
+                      onChange={(v) => change("pass", v)}
+                      type="password"
+                      error={errors.pass}
+                      autoComplete="new-password"
+                      required
+                    />
+                    <Field
+                      label="Confirmar contraseña"
+                      value={fields.confirm}
+                      onChange={(v) => change("confirm", v)}
+                      type="password"
+                      error={errors.confirm}
+                      autoComplete="new-password"
+                      required
+                    />
+                    <label className="field">
+                      <span>
                         {translate(
-                          "Guardamos el contacto en este dispositivo. No enviamos alertas externas.",
+                          "¿Cómo prefieres que te llamemos? (opcional)",
                           data.language,
                         )}
                       </span>
-                    </p>
-                  </div>
-                  <Field
-                    label="Nombre del contacto"
-                    value={fields.contact}
-                    onChange={(v) => change("contact", v)}
-                    error={errors.contact}
-                    inputRef={first}
-                    required
-                  />
-                  <Field
-                    label="Celular del contacto"
-                    value={fields.contactPhone}
-                    onChange={(v) =>
-                      change("contactPhone", v.replace(/\D/g, ""))
-                    }
-                    error={errors.contactPhone}
-                    maxLength={10}
-                    required
-                  />
-                  <label className="field">
-                    <span>
-                      {translate("Parentesco", data.language)}{" "}
-                      <b className="required-mark">*</b>
-                    </span>
-                    <select
-                      value={fields.relationship}
-                      onChange={(e) => change("relationship", e.target.value)}
+                      <select
+                        value={fields.preference}
+                        onChange={(e) => change("preference", e.target.value)}
+                      >
+                        <option value="Pasajera">
+                          {data.language === "en" ? "She/her" : "Pasajera"}
+                        </option>
+                        <option value="Pasajero">
+                          {data.language === "en" ? "He/him" : "Pasajero"}
+                        </option>
+                        <option value="Prefiero no decirlo">
+                          {translate("Prefiero no decirlo", data.language)}
+                        </option>
+                      </select>
+                    </label>
+                  </>
+                ) : (
+                  <>
+                    <div className="info-card">
+                      <Icon name="shield" />
+                      <p>
+                        <b>
+                          {translate("Contacto de confianza", data.language)}
+                        </b>
+                        <br />
+                        <span className="muted">
+                          {translate(
+                            "Guardamos el contacto en este dispositivo. No enviamos alertas externas.",
+                            data.language,
+                          )}
+                        </span>
+                      </p>
+                    </div>
+                    <Field
+                      label="Nombre del contacto"
+                      value={fields.contact}
+                      onChange={(v) => change("contact", v)}
+                      error={errors.contact}
+                      autoComplete="name"
+                      inputRef={first}
                       required
+                    />
+                    <Field
+                      label="Celular del contacto"
+                      value={fields.contactPhone}
+                      onChange={(v) =>
+                        change("contactPhone", v.replace(/\D/g, ""))
+                      }
+                      error={errors.contactPhone}
+                      type="tel"
+                      autoComplete="tel"
+                      inputMode="numeric"
+                      maxLength={10}
+                      required
+                    />
+                    <label className="field">
+                      <span>
+                        {translate("Parentesco", data.language)}{" "}
+                        <b className="required-mark">*</b>
+                      </span>
+                      <select
+                        value={fields.relationship}
+                        onChange={(e) => change("relationship", e.target.value)}
+                        required
+                      >
+                        <option value="">
+                          {translate("Selecciona", data.language)}
+                        </option>
+                        <option value="Familiar">
+                          {translate("Familiar", data.language)}
+                        </option>
+                        <option value="Amistad">
+                          {translate("Amistad", data.language)}
+                        </option>
+                        <option value="Pareja">
+                          {translate("Pareja", data.language)}
+                        </option>
+                      </select>
+                      {errors.relationship && (
+                        <small className="error">{errors.relationship}</small>
+                      )}
+                    </label>
+                    <p className="section-label">
+                      {translate("FICHA DE NECESIDADES", data.language)}
+                    </p>
+                    <div className="needs-grid">
+                      {[
+                        "Movilidad reducida",
+                        "Acompañante",
+                        "Silla para niños",
+                        "Equipaje grande",
+                        "Mascota",
+                        "Ayuda con bolsas",
+                      ].map((need) => (
+                        <label className="check-row" key={need}>
+                          <input
+                            type="checkbox"
+                            checked={fields.needs.includes(need)}
+                            onChange={() =>
+                              change(
+                                "needs",
+                                fields.needs.includes(need)
+                                  ? fields.needs.filter((n) => n !== need)
+                                  : [...fields.needs, need],
+                              )
+                            }
+                          />
+                          <span>{translate(need, data.language)}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <label className="field">
+                      <span>
+                        {translate(
+                          "Nota para el conductor (opcional)",
+                          data.language,
+                        )}
+                      </span>
+                      <textarea
+                        value={fields.note}
+                        maxLength={150}
+                        onChange={(e) => change("note", e.target.value)}
+                      />
+                    </label>
+                    <small className="counter">{fields.note.length}/150</small>
+                    <label
+                      className={`check-row ${
+                        errors.consent ? "check-error" : ""
+                      }`}
                     >
-                      <option value="">
-                        {translate("Selecciona", data.language)}
-                      </option>
-                      <option value="Familiar">
-                        {translate("Familiar", data.language)}
-                      </option>
-                      <option value="Amistad">
-                        {translate("Amistad", data.language)}
-                      </option>
-                      <option value="Pareja">
-                        {translate("Pareja", data.language)}
-                      </option>
-                    </select>
-                    {errors.relationship && (
-                      <small className="error">{errors.relationship}</small>
+                      <input
+                        type="checkbox"
+                        checked={fields.consent}
+                        onChange={(e) => change("consent", e.target.checked)}
+                      />
+                      <span>
+                        {translate(
+                          "Autorizo el tratamiento de mis datos personales según la Ley 1581 de 2012. Los usamos solo para tu seguridad y tu viaje.",
+                          data.language,
+                        )}
+                      </span>
+                    </label>
+                    {errors.consent && (
+                      <small className="error">{errors.consent}</small>
                     )}
-                  </label>
-                  <p className="section-label">
-                    {translate("FICHA DE NECESIDADES", data.language)}
-                  </p>
-                  <div className="needs-grid">
-                    {[
-                      "Movilidad reducida",
-                      "Acompañante",
-                      "Silla para niños",
-                      "Equipaje grande",
-                      "Mascota",
-                      "Ayuda con bolsas",
-                    ].map((need) => (
-                      <label className="check-row" key={need}>
-                        <input
-                          type="checkbox"
-                          checked={fields.needs.includes(need)}
-                          onChange={() =>
-                            change(
-                              "needs",
-                              fields.needs.includes(need)
-                                ? fields.needs.filter((n) => n !== need)
-                                : [...fields.needs, need],
-                            )
-                          }
-                        />
-                        <span>{translate(need, data.language)}</span>
-                      </label>
-                    ))}
-                  </div>
-                  <label className="field">
-                    <span>
-                      {translate(
-                        "Nota para el conductor (opcional)",
-                        data.language,
-                      )}
-                    </span>
-                    <textarea
-                      value={fields.note}
-                      maxLength={150}
-                      onChange={(e) => change("note", e.target.value)}
-                    />
-                  </label>
-                  <small className="counter">{fields.note.length}/150</small>
-                  <label
-                    className={`check-row ${
-                      errors.consent ? "check-error" : ""
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={fields.consent}
-                      onChange={(e) => change("consent", e.target.checked)}
-                    />
-                    <span>
-                      {translate(
-                        "Autorizo el tratamiento de mis datos personales según la Ley 1581 de 2012. Los usamos solo para tu seguridad y tu viaje.",
-                        data.language,
-                      )}
-                    </span>
-                  </label>
-                  {errors.consent && (
-                    <small className="error">{errors.consent}</small>
-                  )}
-                  <button
-                    type="button"
-                    className="text-link"
-                    onClick={() =>
-                      appNotice(
-                        "Este prototipo guarda datos y contraseña localmente en este navegador. No debe usarse como sistema de producción.",
-                      )
-                    }
-                  >
-                    {translate("Política de privacidad", data.language)}
-                  </button>
-                </>
-              )}
-              <Button type="submit">
-                {step === 1 ? "Continuar" : "Crear mi cuenta"}
-              </Button>
+                    <button
+                      type="button"
+                      className="text-link"
+                      onClick={() =>
+                        appNotice(
+                          "Este prototipo guarda datos y contraseña localmente en este navegador. No debe usarse como sistema de producción.",
+                        )
+                      }
+                    >
+                      {translate("Política de privacidad", data.language)}
+                    </button>
+                  </>
+                )}
+              </div>
+              <div className="sticky-form-action register-submit">
+                <Button type="submit">
+                  {step === 1 ? "Continuar" : "Crear mi cuenta"}
+                </Button>
+              </div>
             </form>
           </>
         )}
@@ -937,7 +980,7 @@ export function AdminRegister({
 
   return (
     <section>
-      <Header title="Registro de administrador" back={() => go("welcome")} />
+      <Header title="Registro de administrador" back={() => go("login")} />
       <div className="page auth-page">
         <Logo />
         <div>
@@ -1055,9 +1098,9 @@ export function Forgot({
   }
 
   return (
-    <section>
+    <section className="forgot-screen">
       <Header title="Recuperar acceso" back={() => go("login")} />
-      <div className="page auth-page">
+      <div className="page auth-page forgot-page">
         <span className="feature-icon">
           <Icon name="shield" size={28} />
         </span>
@@ -1067,7 +1110,7 @@ export function Forgot({
             Verificaremos si el correo pertenece a una cuenta registrada.
           </p>
         </div>
-        <form className="form" onSubmit={submit} noValidate>
+        <form className="form forgot-form" onSubmit={submit} noValidate>
           <Field
             label="Correo electrónico"
             value={email}
@@ -1077,10 +1120,14 @@ export function Forgot({
               setNotice("")
             }}
             type="email"
+            autoComplete="email"
+            inputMode="email"
             error={error}
             required
           />
-          <Button type="submit">Verificar correo</Button>
+          <div className="sticky-form-action">
+            <Button type="submit">Verificar correo</Button>
+          </div>
         </form>
         {notice && (
           <div className="notice-card" role="status">
@@ -1212,7 +1259,12 @@ export function PassengerHome({
   return (
     <section className="map-screen">
       <div className="map-bg">
-        <MapView origin={data.origin} showDrivers onDriverPick={setTaxi} />
+        <MapView
+          origin={data.origin}
+          showDrivers
+          onDriverPick={setTaxi}
+          attributionAbovePanel
+        />
       </div>
       <div className="map-top">
         <button
@@ -1482,13 +1534,94 @@ export function MapPicker({
 
   const [selected, setSelected] = useState(origin)
 
+  const [mapControls, setMapControls] = useState<MapViewControls | null>(null)
+
+  const [mapLocationError, setMapLocationError] = useState("")
+
+  const showMyLocation = () => {
+    if (!navigator.geolocation) {
+      setMapLocationError(
+        translate("Este navegador no puede compartir tu ubicación.", language),
+      )
+      return
+    }
+
+    setMapLocationError("")
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        mapControls?.showLocation(coords.latitude, coords.longitude)
+      },
+      () =>
+        setMapLocationError(
+          translate(
+            "No pudimos obtener tu ubicación. Revisa el permiso del navegador.",
+            language,
+          ),
+        ),
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 },
+    )
+  }
+
   return (
     <section>
       <Header title="Elegir en el mapa" back={back} />
-      <div className="page">
+      <div className="page map-picker-page">
+        <p className="muted map-picker-instructions">
+          {translate(
+            "Mueve y acerca el mapa. Toca un punto marcado o elige un lugar de la lista.",
+            language,
+          )}
+        </p>
         <div className="oca-map">
-          <MapView origin={selected} interactive onPick={setSelected} />
+          <MapView
+            origin={selected}
+            interactive
+            showPlaces
+            onPick={setSelected}
+            onControlsReady={setMapControls}
+          />
         </div>
+        <div
+          className="map-picker-controls"
+          role="group"
+          aria-label={translate("Controles del mapa", language)}
+        >
+          <button
+            type="button"
+            className="map-picker-control"
+            aria-label={translate("Acercar mapa", language)}
+            disabled={!mapControls}
+            onClick={() => mapControls?.zoomIn()}
+          >
+            <span aria-hidden="true">+</span>
+            {translate("Acercar", language)}
+          </button>
+          <button
+            type="button"
+            className="map-picker-control"
+            aria-label={translate("Alejar mapa", language)}
+            disabled={!mapControls}
+            onClick={() => mapControls?.zoomOut()}
+          >
+            <span aria-hidden="true">−</span>
+            {translate("Alejar", language)}
+          </button>
+          <button
+            type="button"
+            className="map-picker-control"
+            aria-label={translate("Mostrar mi ubicación", language)}
+            disabled={!mapControls}
+            onClick={showMyLocation}
+          >
+            <span aria-hidden="true">◎</span>
+            {translate("Ubicación", language)}
+          </button>
+        </div>
+        {mapLocationError && (
+          <p className="map-location-message" role="status">
+            {mapLocationError}
+          </p>
+        )}
         <div
           className="zone-options"
           role="group"
@@ -1635,18 +1768,26 @@ export function Fare({
             label="Recogida"
             value={data.origin}
             onChange={(origin) =>
-              update({ origin, fareManuallyAdjusted: false, selectedDriver: "" })
+              update({
+                origin,
+                fareManuallyAdjusted: false,
+                selectedDriver: "",
+              })
             }
           />
           <div className="route-card destination-only">
-            <div className="route-points"><span /></div>
+            <div className="route-points">
+              <span />
+            </div>
             <div>
               <small>{translate("DESTINO", data.language)}</small>
               <b>{canonicalPlaceName(data.destination) || data.destination}</b>
             </div>
           </div>
           <p className="error" role="alert">
-            No hay coordenadas confiables para uno de estos lugares. No calcularemos ni mostraremos una tarifa hasta elegir un punto guardado.
+            No hay coordenadas confiables para uno de estos lugares. No
+            calcularemos ni mostraremos una tarifa hasta elegir un punto
+            guardado.
           </p>
           <Button variant="secondary" onClick={() => go("search")}>
             Elegir un destino guardado
@@ -1872,7 +2013,15 @@ export function FareBreakdown({ data }: { data: Stored }) {
   const fare = fareFor(data)
 
   if (!fare.routeValid) {
-    return <><h2>No se puede estimar esta ruta</h2><p className="error">Elige puntos con coordenadas guardadas para calcular una tarifa orientativa.</p></>
+    return (
+      <>
+        <h2>No se puede estimar esta ruta</h2>
+        <p className="error">
+          Elige puntos con coordenadas guardadas para calcular una tarifa
+          orientativa.
+        </p>
+      </>
+    )
   }
 
   return (
@@ -2146,7 +2295,11 @@ export function Assigned({
   return (
     <section className="map-screen assigned">
       <div className="map-bg">
-        <MapView origin={data.origin} destination={data.destination} />
+        <MapView
+          origin={data.origin}
+          destination={data.destination}
+          attributionAbovePanel
+        />
       </div>
       <Header title="Conductor asignado" back={back} />
       <div className="driver-sheet">
@@ -2435,7 +2588,7 @@ export function CallDialog({ name }: { name: string }) {
   )
 }
 
-export function SOS({ data, update }: { data: Stored; update: Update }) {
+export function SOS({ data, update }: StoredUpdateProps) {
   const [holding, setHolding] = useState(false)
 
   const [sent, setSent] = useState(data.sosActive)
@@ -3100,7 +3253,7 @@ export function Rating({
   )
 }
 
-export function Thanks({ go, data }: { go: (s: Screen) => void; data: Stored }) {
+export function Thanks({ go, data }: ThanksProps) {
   return (
     <section className="page success-page">
       <span className="success-icon">
@@ -3316,7 +3469,7 @@ export function TripDetail({
   )
 }
 
-export function Report({ data, update }: { data: Stored; update: Update }) {
+export function Report({ data, update }: StoredUpdateProps) {
   const [step, setStep] = useState(1)
   const [reason, setReason] = useState("")
   const [description, setDescription] = useState("")
@@ -3574,7 +3727,7 @@ export function Profile({
   )
 }
 
-export function SavedPlaces({ data, update }: { data: Stored; update: Update }) {
+export function SavedPlaces({ data, update }: StoredUpdateProps) {
   const [home, setHome] = useState(
     data.savedPlaces.find((item) => item.label === "Casa")?.place || "",
   )
@@ -3775,7 +3928,7 @@ export function TrustedContact({
   )
 }
 
-export function NeedsForm({ data, update }: { data: Stored; update: Update }) {
+export function NeedsForm({ data, update }: StoredUpdateProps) {
   const [needs, setNeeds] = useState(data.account?.needs || [])
   const [note, setNote] = useState(data.account?.needsNote || "")
 
@@ -3969,7 +4122,7 @@ export function PrivacySettings({
   )
 }
 
-export function AppSettings({ data, update }: { data: Stored; update: Update }) {
+export function AppSettings({ data, update }: StoredUpdateProps) {
   const [appearance, setAppearance] = useState(data.appearance)
 
   const [sound, setSound] = useState(data.sound)

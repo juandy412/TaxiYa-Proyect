@@ -28,8 +28,8 @@ void migrateStoredPasswords()
     root.render(
       <main role="alert">
         <p>
-          No se pudo proteger la información guardada. Abre TaxiYa desde un
-          navegador seguro y vuelve a intentarlo.
+          No se pudo proteger la información guardada. Abre TaxiYa desde su
+          enlace seguro que empieza por https:// y vuelve a intentarlo.
         </p>
       </main>,
     )
