@@ -8,11 +8,13 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "audit:ui": "node scripts/auditoria-ui.mjs",
+    "capture:demo": "node scripts/capturas-demo.mjs",
     "preview": "vite preview",
     "format": "oxfmt"
   },
   "dependencies": {
     "@google/genai": "^2.30.0",
+    "@supabase/supabase-js": "^2.118.0",
     "leaflet": "^1.9.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

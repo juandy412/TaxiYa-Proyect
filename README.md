@@ -2,16 +2,29 @@
 
 Aplicación móvil demostrativa para pasajeros, conductores y administración. El prototipo integra mapas, estimación local de tarifas, solicitudes de viaje, PIN, historial, accesibilidad y un asistente de lenguaje natural.
 
-> **Límites de uso:** es un prototipo local; no lo uses para organizar viajes reales ni para emergencias. Los pagos, documentos, llamadas, chat y acciones SOS son simulados o locales. No hay asignación de taxis conectada entre teléfonos ni un centro de seguridad.
+> **Límites de uso:** prototipo universitario, no usar para viajes reales ni emergencias. Si Supabase no está configurado, los viajes se quedan en el dispositivo. El SOS muestra enlaces para llamar y compartir; el Escudo y el movimiento del taxi son demostraciones, no monitoreo real.
 
 ## Requisitos y ejecución
 
 - Node.js compatible con Vite 8 y pnpm.
 - Para compilar y revisar tipos: `pnpm build`.
 - Para ejecutar la interfaz: `pnpm dev`.
+- Abre la app local en `http://localhost:5173`. Para probar `/api/assistant` usa `pnpm dlx vercel dev`.
 - Si pnpm no está instalado, usa `npm install`, `npm run typecheck`, `npm run build` y `npm run dev`.
 
 `pnpm build` ejecuta primero TypeScript (`tsc --noEmit`) y luego el build de Vite.
+
+## Capturas y demo
+
+Las capturas se regeneran con `pnpm capture:demo` mientras Vite está activo. El script usa Playwright y crea la carpeta `docs/capturas/`.
+
+![Bienvenida de TaxiYa](./docs/capturas/bienvenida.png)
+
+![Inicio de sesión](./docs/capturas/inicio-sesion.png)
+
+![Mapa y selección de destino](./docs/capturas/mapa-y-destino.png)
+
+No hay una URL de demo pública desplegada configurada en este repositorio; no se publica una URL ficticia. El enlace local para la presentación es `http://localhost:5173`.
 
 ## Auditoría de interfaz
 
@@ -21,7 +34,7 @@ Instala las dependencias con `pnpm install` y ejecuta `pnpm exec playwright inst
 
 La interfaz envía el último mensaje y el contexto mínimo del viaje (rol, idioma, pantalla, estado y lugares guardados) a `POST /api/assistant`. La función serverless de Vercel usa el SDK oficial `@google/genai` y exige JSON estructurado `{ reply, action }` mediante `responseMimeType: "application/json"` y `responseSchema`. El mensaje se sanea para omitir teléfonos, correos, contraseñas y nombres completos indicados en frases comunes; los datos de cuenta nunca se adjuntan al contexto. La clave solo se lee en el servidor y no se incluye en el bundle del navegador.
 
-1. Copia `.env.example` a `.env` para configurar tu entorno local/de despliegue. No subas `.env` ni compartas la clave.
+1. Copia `.env.example` a `.env` para configurar tu entorno local/de despliegue. No subas `.env` ni compartas claves.
 2. Define `GEMINI_API_KEY` y, si quieres cambiar el modelo rápido, `GEMINI_MODEL` (por defecto `gemini-2.5-flash`) en las variables de entorno del proyecto de Vercel. La clave se obtiene desde Google AI Studio y debe permanecer solo en el entorno de servidor.
 3. Despliega en Vercel para habilitar `/api/assistant`. Para desarrollo local con la función disponible, utiliza Vercel CLI (`pnpm dlx vercel dev`) y configura allí las variables.
 4. `pnpm dev` inicia Vite sin el runtime de funciones de Vercel. En este modo el asistente muestra un aviso y utiliza las respuestas locales de respaldo. Para desarrollo local con el endpoint, usa `pnpm dlx vercel dev`.
@@ -32,13 +45,34 @@ Las respuestas del modelo se validan en el servidor y en el cliente: se limita e
 
 El micrófono usa Web Speech API en español de Colombia (`es-CO`) y solo se muestra cuando el navegador la ofrece. La lectura en voz alta es opcional. Los navegadores sin estas funciones conservan el chat escrito.
 
+El endpoint solo acepta POST con `Content-Type: application/json`, limita el texto a 500 caracteres y responde errores con `{ error: { code, message } }`. Aplica un máximo de 20 solicitudes por minuto e IP. Si defines `UPSTASH_REDIS_REST_URL` y `UPSTASH_REDIS_REST_TOKEN`, el límite usa Redis compartido; sin esas variables, usa memoria del proceso, que no es un contador global entre instancias serverless. El endpoint falla cerrado si Redis está configurado pero no responde. Configura Upstash Redis en producción para que el límite se comparta entre instancias.
+
+## Viajes entre teléfonos (Supabase)
+
+La sincronización en tiempo real usa el plan gratuito de Supabase. Sin estas variables, el prototipo conserva las solicitudes solo localmente y lo avisa:
+
+1. Crea un proyecto Supabase.
+2. En SQL Editor ejecuta [`supabase/schema.sql`](./supabase/schema.sql). Crea la tabla `rides`, habilita Realtime y define políticas públicas de demostración.
+3. Copia Project URL y la clave **anon/public** a `.env`:
+
+   ```dotenv
+   VITE_SUPABASE_URL=https://TU-PROYECTO.supabase.co
+   VITE_SUPABASE_ANON_KEY=TU_CLAVE_ANON_PUBLIC
+   ```
+
+4. Reinicia Vite. En dos navegadores/dispositivos, registra un pasajero y un conductor aprobado; conecta al conductor y publica una solicitud.
+
+La tabla sincroniza únicamente identificador aleatorio, origen, destino, oferta calculada localmente, estado, nombre del conductor y placa. No envía teléfono, correo, contraseña ni coordenadas GPS. Las políticas del SQL permiten lectura/escritura anónima para facilitar la demostración: **no son aptas para producción**. Producción requiere autenticación Supabase, RLS por usuario/rol, autorización de conductor y protección del endpoint público. El estado admitido es `requested`, `accepted`, `enroute`, `arrived`, `in_trip`, `finished` o `cancelled`; el conductor acepta de forma condicional para evitar que se acepten dos veces.
+
+Compartir abre Web Share cuando está disponible o un enlace a WhatsApp. El enlace `#/shared-trip?id=…` muestra el estado sincronizado; no expone ubicación GPS ni funciona si no se configuró Supabase.
+
 ## Recorrido de demostración
 
-1. Desde Bienvenida crea una cuenta de pasajero en dos pasos; la app conduce al permiso de ubicación, que permite continuar sin conceder acceso.
+1. Desde Bienvenida crea una cuenta de pasajero en dos pasos; la app solicita ubicación para fijar el origen. Si se deniega el permiso, puedes continuar y elegir un punto manualmente.
 2. Busca uno de los destinos guardados, revisa la tarifa orientativa y publica una oferta.
-3. Registra una cuenta de conductor, completa los campos de vehículo y marca como cargados los documentos simulados.
+3. Registra una cuenta de conductor, completa los campos de vehículo y elige imágenes o PDF para vista previa local. Los archivos no se cargan a un servidor.
 4. Crea/inicia sesión con una cuenta de administrador para aprobar el registro local del conductor.
-5. Inicia sesión como conductor, conéctate y acepta la solicitud disponible.
+5. Inicia sesión como conductor, conéctate y acepta la solicitud disponible. Para recibirla en otro teléfono, configura Supabase antes.
 6. Marca la llegada, verifica el PIN de demostración, simula el trayecto, confirma el pago simulado y completa la calificación.
 7. Consulta el historial y los recibos con los roles correspondientes. Las cuentas y datos están aislados a este navegador.
 
@@ -50,15 +84,18 @@ El micrófono usa Web Speech API en español de Colombia (`es-CO`) y solo se mue
 - `src/lib/assistant.ts`: validación de respuestas y lista de acciones permitidas.
 - `src/lib/password.ts`: hash PBKDF2-HMAC-SHA-256 con sal individual mediante Web Crypto; migra contraseñas antiguas al iniciar.
 - `src/lib/fare.ts`: distancia y estimación de tarifa local, sin consultar al modelo.
+- `src/lib/liveRides.ts` y `supabase/schema.sql`: sincronización Realtime opcional de solicitudes sin cuentas o teléfonos.
+- `src/components/SharedTrip.tsx`: vista pública de seguimiento por enlace.
+- `public/manifest.webmanifest` y `public/sw.js`: instalación PWA y caché del shell; el mapa de OpenStreetMap necesita conexión.
 - `src/data/places.ts`: referencias y coordenadas. Las coordenadas de barrios o referencias generales se marcan como aproximadas. Los puntos añadidos de sitios públicos se contrastaron con OpenStreetMap; sus datos se ofrecen bajo ODbL y se atribuyen a sus colaboradores.
 - `api/assistant.ts`: función serverless de Vercel; usa `@google/genai`, aplica esquema JSON estructurado, valida acciones y lugares, mantiene la clave fuera del cliente y activa fallback ante cuota o errores.
 
 ## Cuentas, privacidad y seguridad
 
-Las cuentas, preferencias, viajes y mensajes permanecen en `localStorage` de este navegador. Las contraseñas guardadas se derivan con PBKDF2-HMAC-SHA-256 y una sal aleatoria por cuenta, y los registros antiguos se migran antes de mostrar la aplicación. **Esto no convierte la autenticación local en una autenticación segura:** quien controla el navegador puede manipular el almacenamiento. En producción hacen falta cuentas, recuperación, sesiones, autorización por rol y hash de contraseñas en un backend.
+Las cuentas, preferencias, viajes e historial permanecen en `localStorage` de este navegador. Las contraseñas guardadas se derivan con PBKDF2-HMAC-SHA-256 y una sal aleatoria por cuenta. **Esto no convierte la autenticación local en una autenticación segura:** quien controla el navegador puede manipular el almacenamiento. El flujo “Olvidé mi contraseña” usa un código de seis dígitos mostrado en la pantalla como demostración; no verifica la identidad por correo. En producción hacen falta cuentas, recuperación, sesiones, autorización por rol y hash de contraseñas en un backend.
 
-El formulario “Olvidé mi contraseña” no envía códigos ni permite recuperar cuentas porque no existe un servidor de autenticación. Los documentos no se suben. No se envía una ubicación a contactos ni a una central. El temporizador del Escudo y sus notificaciones se identifican como simulaciones; no detectan movimiento real.
+Los documentos de conductor se previsualizan con URL local; no se suben. SOS no contacta automáticamente a una central: inicia la cuenta atrás y deja disponibles enlaces `tel:123` y WhatsApp por la restricción de ventanas emergentes del navegador. El Escudo y las notificaciones son simulaciones y no detectan movimiento real.
 
 ## Mapas y referencias
 
-Los mapas de calles usan teselas de OpenStreetMap y requieren conexión; el mapa interactivo permite acercar, alejar, moverse, seleccionar puntos de referencia y centrar la vista en tu ubicación si das permiso al navegador. La ubicación no se envía a TaxiYa. Las nuevas coordenadas de lugares se consultaron en Nominatim/OpenStreetMap; las coordenadas previas de zonas amplias se conservan marcadas como aproximadas. No es un localizador de direcciones ni hay seguimiento GPS en vivo. No calcules recorridos reales con estas estimaciones.
+Los mapas de calles usan teselas de OpenStreetMap y requieren conexión. Al aceptar GPS, la ubicación exacta se conserva localmente para ubicar el origen y calcular la distancia; solo se sincroniza el nombre del lugar de referencia. El marcador de taxi y su ETA son una animación ilustrativa basada en la ruta disponible, no una ubicación real del conductor. No calcules recorridos reales con estas estimaciones.

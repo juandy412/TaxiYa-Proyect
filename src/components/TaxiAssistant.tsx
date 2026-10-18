@@ -76,6 +76,7 @@ export function TaxiAssistant({
   const [assistantError, setAssistantError] = useState(false)
   const [lastMessage, setLastMessage] = useState("")
   const [listening, setListening] = useState(false)
+  const [voiceError, setVoiceError] = useState("")
   const [readAloud, setReadAloud] = useState(false)
   const chatRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -113,7 +114,7 @@ export function TaxiAssistant({
             ? ["¿Por qué este precio?", "Tarifa de noche", "¿Cuánto demora?"]
             : screen === "profile"
               ? ["Ayuda con mi cuenta", "Editar mi contacto", "Privacidad"]
-              : ["Pedir un taxi", "Ir al Hospital", "Ver mis viajes"]
+              : ["Pedir taxi", "¿Cuánto cuesta?", "Ver mis viajes"]
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
@@ -929,15 +930,23 @@ export function TaxiAssistant({
       }
     }
 
-    recognition.onerror = () => setListening(false)
+    recognition.onerror = () => {
+      setListening(false)
+      setVoiceError("No se pudo usar el micrófono. Revisa el permiso del navegador.")
+    }
 
     recognition.onend = () => setListening(false)
 
     recognitionRef.current = recognition
 
+    setVoiceError("")
     setListening(true)
-
-    recognition.start()
+    try {
+      recognition.start()
+    } catch {
+      setListening(false)
+      setVoiceError("No se pudo iniciar el micrófono. Inténtalo de nuevo.")
+    }
   }
 
   useEffect(
@@ -1143,23 +1152,38 @@ export function TaxiAssistant({
               data.language,
             )}
           />
-          {voiceSupported && (
-            <button
-              type="button"
-              onClick={startVoiceInput}
-              disabled={listening || loading}
-              aria-label={translate(
-                listening ? "Escuchando" : "Dictar mensaje",
-                data.language,
-              )}
-              title={translate(
-                listening ? "Escuchando" : "Dictar mensaje",
-                data.language,
-              )}
-            >
-              {listening ? "…" : <Icon name="mic" />}
-            </button>
-          )}
+          <button
+            type="button"
+            className={`voice-button ${listening ? "listening" : ""}`}
+            onClick={startVoiceInput}
+            disabled={!voiceSupported || listening || loading}
+            aria-pressed={listening}
+            aria-label={translate(
+              !voiceSupported
+                ? "Micrófono no disponible"
+                : listening
+                  ? "Escuchando"
+                  : "Dictar mensaje",
+              data.language,
+            )}
+            title={translate(
+              !voiceSupported
+                ? "Micrófono no disponible"
+                : listening
+                  ? "Escuchando"
+                  : "Dictar mensaje",
+              data.language,
+            )}
+          >
+            <Icon name="mic" />
+            <span>
+              {!voiceSupported
+                ? translate("No disponible", data.language)
+                : listening
+                  ? translate("Escuchando…", data.language)
+                  : translate("Hablar", data.language)}
+            </span>
+          </button>
           <button
             onClick={() => void handle(text)}
             disabled={!text.trim() || loading}
@@ -1168,6 +1192,7 @@ export function TaxiAssistant({
             <Icon name="chevron" />
           </button>
         </div>
+        {voiceError && <p className="assistant-voice-status" role="status">{voiceError}</p>}
         {"speechSynthesis" in window && (
           <button
             type="button"

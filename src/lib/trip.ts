@@ -18,6 +18,10 @@ export function startTrip(
   update((current) => ({
     ...passengerDetails(current),
     tripStatus: "requested",
+    activeRequestId:
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     pin: String(Math.floor(1000 + Math.random() * 9000)),
     activeRideReal: true,
     rideMessages: [],

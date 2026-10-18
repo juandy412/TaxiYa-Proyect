@@ -1,4 +1,5 @@
 import { GoogleGenAI, Type, type Schema } from "@google/genai"
+import { createHash } from "node:crypto"
 
 import { placesData } from "../src/data/places"
 
@@ -6,12 +7,14 @@ import { sanitizeAssistantMessage } from "../src/lib/assistant"
 
 type Request = {
   method?: string
+  headers?: Record<string, string | string[] | undefined>
+  socket?: { remoteAddress?: string }
   body?: unknown
 }
 
 type Response = {
   status(code: number): Response
-
+  setHeader?(name: string, value: string): void
   json(value: unknown): void
 }
 
@@ -214,25 +217,121 @@ function isQuotaError(error: unknown) {
   )
 }
 
+const rateWindowMs = 60_000
+const rateLimit = 20
+const requestsByIp = new Map<string, number[]>()
+
+function clientIp(request: Request) {
+  const forwarded =
+    request.headers?.["x-vercel-forwarded-for"] ||
+    request.headers?.["x-forwarded-for"]
+  const firstForwarded = Array.isArray(forwarded)
+    ? forwarded[0]
+    : forwarded?.split(",")[0]
+  return firstForwarded?.trim() || request.socket?.remoteAddress || "unknown"
+}
+
+async function isRateLimited(request: Request) {
+  const now = Date.now()
+  const ipHash = createHash("sha256").update(clientIp(request)).digest("hex")
+  const redisUrl = process.env.UPSTASH_REDIS_REST_URL?.replace(/\/+$/u, "")
+  const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN
+
+  if (redisUrl && redisToken) {
+    const script =
+      "local count = redis.call('INCR', KEYS[1]); if count == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]); end; return count"
+    const result = await fetch(`${redisUrl}/`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${redisToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(["EVAL", script, "1", `taxiya:assistant:${ipHash}`, String(rateWindowMs)]),
+      signal: AbortSignal.timeout(3000),
+    })
+    if (!result.ok) throw new Error("Rate-limit storage unavailable.")
+    const payload: unknown = await result.json()
+    if (!payload || typeof payload !== "object" || !("result" in payload))
+      throw new Error("Invalid rate-limit response.")
+    return Number((payload as { result: unknown }).result) > rateLimit
+  }
+
+  const recentRequests = (requestsByIp.get(ipHash) || []).filter(
+    (timestamp) => now - timestamp < rateWindowMs,
+  )
+  if (recentRequests.length >= rateLimit) return true
+  recentRequests.push(now)
+  requestsByIp.set(ipHash, recentRequests)
+  if (requestsByIp.size > 2_000) {
+    for (const [key, timestamps] of requestsByIp)
+      if (!timestamps.some((timestamp) => now - timestamp < rateWindowMs))
+        requestsByIp.delete(key)
+  }
+  return false
+}
+
+function jsonError(
+  response: Response,
+  status: number,
+  code: string,
+  message: string,
+) {
+  response.setHeader?.("Cache-Control", "no-store")
+  return response.status(status).json({ error: { code, message } })
+}
+
 export default async function handler(request: Request, response: Response) {
   if (request.method !== "POST")
-    return response.status(405).json({ error: "Usa una solicitud POST." })
+    return jsonError(response, 405, "METHOD_NOT_ALLOWED", "Usa una solicitud POST.")
+
+  const contentType = request.headers?.["content-type"]
+  const normalizedContentType = Array.isArray(contentType)
+    ? contentType[0]
+    : contentType
+  if (
+    normalizedContentType
+      ?.split(";")[0]
+      .trim()
+      .toLowerCase() !== "application/json"
+  )
+    return jsonError(
+      response,
+      415,
+      "UNSUPPORTED_MEDIA_TYPE",
+      "Envía el contenido como application/json.",
+    )
+
+  try {
+    if (await isRateLimited(request)) {
+    response.setHeader?.("Retry-After", "60")
+    return jsonError(
+      response,
+      429,
+      "RATE_LIMITED",
+      "Has enviado muchas solicitudes. Espera un minuto e inténtalo de nuevo.",
+    )
+    }
+  } catch {
+    return jsonError(
+      response,
+      503,
+      "RATE_LIMIT_UNAVAILABLE",
+      "No pudimos validar el límite de solicitudes. Inténtalo de nuevo.",
+    )
+  }
 
   const apiKey = process.env.GEMINI_API_KEY
 
   if (!apiKey)
-    return response
-
-      .status(503)
-
-      .json({ error: "El asistente remoto no está configurado." })
+    return jsonError(
+      response,
+      503,
+      "ASSISTANT_NOT_CONFIGURED",
+      "El asistente remoto no está configurado.",
+    )
 
   if (!request.body || typeof request.body !== "object")
-    return response
-
-      .status(400)
-
-      .json({ error: "La solicitud no tiene un formato válido." })
+    return jsonError(response, 400, "INVALID_BODY", "La solicitud no tiene un formato válido.")
 
   const body = request.body as Record<string, unknown>
 
@@ -241,11 +340,12 @@ export default async function handler(request: Request, response: Response) {
     !body.message.trim() ||
     body.message.length > 500
   )
-    return response
-
-      .status(400)
-
-      .json({ error: "El mensaje debe tener entre 1 y 500 caracteres." })
+    return jsonError(
+      response,
+      400,
+      "INVALID_MESSAGE",
+      "El mensaje debe tener entre 1 y 500 caracteres.",
+    )
 
   const safeMessage = sanitizeAssistantMessage(
     body.message,
@@ -370,22 +470,22 @@ export default async function handler(request: Request, response: Response) {
     })
 
     if (!result.text || result.text.length > 2_000)
-      return response
-
-        .status(502)
-
-        .json({
-          error: "La respuesta del asistente no tiene el formato esperado.",
-        })
+      return jsonError(
+        response,
+        502,
+        "INVALID_MODEL_RESPONSE",
+        "La respuesta del asistente no tiene el formato esperado.",
+      )
 
     const parsed: unknown = JSON.parse(result.text)
 
     if (!parsed || typeof parsed !== "object")
-      return response
-
-        .status(502)
-
-        .json({ error: "La respuesta del asistente no es válida." })
+      return jsonError(
+        response,
+        502,
+        "INVALID_MODEL_RESPONSE",
+        "La respuesta del asistente no es válida.",
+      )
 
     const candidate = parsed as Record<string, unknown>
 
@@ -394,37 +494,43 @@ export default async function handler(request: Request, response: Response) {
       !candidate.reply.trim() ||
       candidate.reply.length > 2_000
     )
-      return response
-
-        .status(502)
-
-        .json({ error: "Falta la respuesta del asistente." })
+      return jsonError(
+        response,
+        502,
+        "INVALID_MODEL_RESPONSE",
+        "Falta la respuesta del asistente.",
+      )
 
     const action = parseAction(candidate.action)
 
     if (!action)
-      return response
+      return jsonError(
+        response,
+        502,
+        "INVALID_ASSISTANT_ACTION",
+        "La acción propuesta no es válida.",
+      )
 
-        .status(502)
-
-        .json({ error: "La acción propuesta no es válida." })
-
+    response.setHeader?.("Cache-Control", "no-store")
     return response
 
       .status(200)
 
       .json({ reply: candidate.reply.trim().slice(0, 400), action })
   } catch (error) {
-    if (isQuotaError(error)) return response.status(429).json({
-        error: "El asistente alcanzó su límite temporal de uso.",
+    if (isQuotaError(error))
+      return jsonError(
+        response,
+        429,
+        "QUOTA_EXCEEDED",
+        "El asistente alcanzó su límite temporal de uso.",
+      )
 
-        code: "QUOTA_EXCEEDED",
-      })
-
-    return response
-
-      .status(502)
-
-      .json({ error: "El servicio del asistente no está disponible ahora." })
+    return jsonError(
+      response,
+      502,
+      "ASSISTANT_UNAVAILABLE",
+      "El servicio del asistente no está disponible ahora.",
+    )
   }
 }

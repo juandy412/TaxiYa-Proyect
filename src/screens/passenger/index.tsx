@@ -65,6 +65,8 @@ import { PlaceAutocomplete } from "../../components/PlaceAutocomplete"
 import { assignDriver, cancelTrip, finishTrip, startTrip } from "../../lib/trip"
 
 import { hashPassword, verifyPassword } from "../../lib/password"
+import { shareTrip } from "../../lib/shareTrip"
+import { liveRidesConfigured } from "../../lib/liveRides"
 
 type StoredUpdateProps = { data: Stored; update: Update }
 
@@ -1045,6 +1047,7 @@ export function AdminRegister({
 
 export function Forgot({
   data,
+  update,
   role,
   go,
 }: {
@@ -1059,6 +1062,30 @@ export function Forgot({
 
   const [notice, setNotice] = useState("")
 
+  const [code, setCode] = useState("")
+
+  const [enteredCode, setEnteredCode] = useState("")
+
+  const [newPassword, setNewPassword] = useState("")
+
+  const [confirmPassword, setConfirmPassword] = useState("")
+
+  const [step, setStep] = useState<"email" | "code" | "password" | "done">(
+    "email",
+  )
+
+  const accountForEmail = () => {
+    const normalizedEmail = email.trim().toLowerCase()
+    const account =
+      role === "driver"
+        ? data.driverAccount
+        : role === "admin"
+          ? data.adminAccount
+          : data.account
+
+    return account?.email.toLowerCase() === normalizedEmail ? account : null
+  }
+
   const submit = (event: FormEvent) => {
     event.preventDefault()
 
@@ -1070,14 +1097,7 @@ export function Forgot({
       return
     }
 
-    const account =
-      role === "driver"
-        ? data.driverAccount
-        : role === "admin"
-          ? data.adminAccount
-          : data.account
-
-    if (!account || account.email.toLowerCase() !== normalizedEmail) {
+    if (!accountForEmail()) {
       const roleName =
         role === "driver"
           ? "conductor"
@@ -1091,10 +1111,64 @@ export function Forgot({
     }
 
     setError("")
-
+    const generated = String(
+      crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000,
+    ).padStart(6, "0")
+    setCode(generated)
+    setEnteredCode("")
+    setStep("code")
     setNotice(
-      "Encontramos la cuenta. Para protegerla, la recuperación requiere un servidor de autenticación; no enviaremos códigos ficticios ni cambiaremos la contraseña en este dispositivo.",
+      `Código de demostración: ${generated}. Este prototipo no envía mensajes.`,
     )
+  }
+
+  const verifyCode = (event: FormEvent) => {
+    event.preventDefault()
+    if (!/^\d{6}$/.test(enteredCode) || enteredCode !== code) {
+      setError("El código no coincide. Revísalo e inténtalo de nuevo.")
+      return
+    }
+    setError("")
+    setNotice("")
+    setStep("password")
+  }
+
+  const saveNewPassword = async (event: FormEvent) => {
+    event.preventDefault()
+    if (newPassword.length < 8) {
+      setError("Usa al menos 8 caracteres.")
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setError("Las contraseñas no coinciden.")
+      return
+    }
+
+    const account = accountForEmail()
+    if (!account) {
+      setError("No encontramos esa cuenta. Vuelve a verificar el correo.")
+      setStep("email")
+      return
+    }
+
+    let password: string
+    try {
+      password = await hashPassword(newPassword)
+    } catch {
+      setError("No pudimos guardar la contraseña. Abre TaxiYa desde un enlace seguro https.")
+      return
+    }
+    const updatedAccount = { ...account, password }
+    update(
+      role === "driver"
+        ? { driverAccount: updatedAccount }
+        : role === "admin"
+          ? { adminAccount: updatedAccount }
+          : { account: updatedAccount },
+    )
+    setError("")
+    setNotice("")
+    setStep("done")
   }
 
   return (
@@ -1110,26 +1184,83 @@ export function Forgot({
             Verificaremos si el correo pertenece a una cuenta registrada.
           </p>
         </div>
-        <form className="form forgot-form" onSubmit={submit} noValidate>
-          <Field
-            label="Correo electrónico"
-            value={email}
-            onChange={(value) => {
-              setEmail(value)
-              setError("")
-              setNotice("")
-            }}
-            type="email"
-            autoComplete="email"
-            inputMode="email"
-            error={error}
-            required
-          />
-          <div className="sticky-form-action">
-            <Button type="submit">Verificar correo</Button>
+        {step === "email" && (
+          <form className="form forgot-form" onSubmit={submit} noValidate>
+            <Field
+              label="Correo electrónico"
+              value={email}
+              onChange={(value) => {
+                setEmail(value)
+                setError("")
+                setNotice("")
+              }}
+              type="email"
+              autoComplete="email"
+              inputMode="email"
+              error={error}
+              required
+            />
+            <div className="sticky-form-action">
+              <Button type="submit">Verificar correo</Button>
+            </div>
+          </form>
+        )}
+        {step === "code" && (
+          <form className="form forgot-form" onSubmit={verifyCode} noValidate>
+            <p className="notice-card" role="status">{notice}</p>
+            <Field
+              label="Código de 6 dígitos"
+              value={enteredCode}
+              onChange={(value) => {
+                setEnteredCode(value.replace(/\D/g, "").slice(0, 6))
+                setError("")
+              }}
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              error={error}
+              required
+            />
+            <div className="sticky-form-action">
+              <Button type="submit">Validar código</Button>
+            </div>
+          </form>
+        )}
+        {step === "password" && (
+          <form className="form forgot-form" onSubmit={saveNewPassword} noValidate>
+            <Field
+              label="Nueva contraseña"
+              value={newPassword}
+              onChange={(value) => {
+                setNewPassword(value)
+                setError("")
+              }}
+              type="password"
+              autoComplete="new-password"
+              error={error}
+              required
+            />
+            <Field
+              label="Repite la contraseña"
+              value={confirmPassword}
+              onChange={setConfirmPassword}
+              type="password"
+              autoComplete="new-password"
+              required
+            />
+            <div className="sticky-form-action">
+              <Button type="submit">Guardar contraseña</Button>
+            </div>
+          </form>
+        )}
+        {step === "done" && (
+          <div className="notice-card" role="status">
+            <Icon name="check" />
+            <p>Contraseña actualizada en este dispositivo. Ya puedes iniciar sesión.</p>
+            <Button onClick={() => go("login")}>Ir a iniciar sesión</Button>
           </div>
-        </form>
-        {notice && (
+        )}
+        {notice && step === "email" && (
           <div className="notice-card" role="status">
             <Icon name="info" />
             <p>{notice}</p>
@@ -1147,6 +1278,44 @@ export function Permission({
   go: (s: Screen) => void
   update: Update
 }) {
+  const [locating, setLocating] = useState(false)
+  const [locationError, setLocationError] = useState("")
+
+  const continueWithLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationError("Este navegador no permite obtener la ubicación. Puedes continuar y elegir el origen manualmente.")
+      return
+    }
+    setLocating(true)
+    setLocationError("")
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        const nearest = Object.entries(farePlaces).sort(
+          ([, first], [, second]) =>
+            Math.hypot(first.lat - coords.latitude, first.lng - coords.longitude) -
+            Math.hypot(second.lat - coords.latitude, second.lng - coords.longitude),
+        )[0]
+        update({
+          origin: nearest?.[0] || "Parque 29 de Mayo",
+          originCoordinates: { lat: coords.latitude, lng: coords.longitude },
+          loggedIn: true,
+          role: "passenger",
+        })
+        setLocating(false)
+        go("home")
+      },
+      (error) => {
+        setLocating(false)
+        setLocationError(
+          error.code === error.PERMISSION_DENIED
+            ? "No diste permiso para usar la ubicación. Puedes elegir el origen manualmente."
+            : "No pudimos encontrar tu ubicación. Revisa el GPS o continúa sin él.",
+        )
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+    )
+  }
+
   return (
     <section className="permission page">
       <div className="permission-map">
@@ -1162,14 +1331,19 @@ export function Permission({
       </p>
       <div className="stack">
         <Button
+          disabled={locating}
+          onClick={continueWithLocation}
+        >
+          {locating ? "Buscando ubicación…" : "Usar mi ubicación"}
+        </Button>
+        {locationError && <p className="error" role="alert">{locationError}</p>}
+        <Button
+          variant="ghost"
           onClick={() => {
-            update({ loggedIn: true, role: "passenger" })
+            update({ loggedIn: true, role: "passenger", originCoordinates: null })
             go("home")
           }}
         >
-          Permitir ubicación
-        </Button>
-        <Button variant="ghost" onClick={() => go("home")}>
           Ahora no
         </Button>
       </div>
@@ -1261,6 +1435,7 @@ export function PassengerHome({
       <div className="map-bg">
         <MapView
           origin={data.origin}
+          originCoordinates={data.originCoordinates}
           showDrivers
           onDriverPick={setTaxi}
           attributionAbovePanel
@@ -2298,6 +2473,7 @@ export function Assigned({
         <MapView
           origin={data.origin}
           destination={data.destination}
+          originCoordinates={data.originCoordinates}
           attributionAbovePanel
         />
       </div>
@@ -2570,70 +2746,86 @@ export function Chat({
 }
 
 export function CallDialog({ name }: { name: string }) {
-  const [calling, setCalling] = useState(true)
-
   return (
     <div className="sos-modal">
       <span className="feature-icon">
         <Icon name="phone" />
       </span>
-      <h2>{calling ? `Llamando a ${name}…` : "Llamada finalizada"}</h2>
-      <p className="muted">Llamada simulada dentro del prototipo.</p>
-      {calling && (
-        <Button variant="danger" onClick={() => setCalling(false)}>
-          Colgar
-        </Button>
-      )}
+      <h2>Contacto de {name}</h2>
+      <p className="muted">
+        El teléfono directo no está disponible en esta demostración. Si hay una emergencia, llama al 123.
+      </p>
+      <a className="button danger" href="tel:123">
+        Llamar a emergencias (123)
+      </a>
     </div>
   )
 }
 
 export function SOS({ data, update }: StoredUpdateProps) {
-  const [holding, setHolding] = useState(false)
-
   const [sent, setSent] = useState(data.sosActive)
 
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [countdown, setCountdown] = useState<number | null>(null)
+
+  const [coordinates, setCoordinates] = useState<{ lat: number; lng: number } | null>(
+    data.originCoordinates || null,
+  )
+
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const whatsappUrl = () => {
+    const location = coordinates
+      ? `https://maps.google.com/?q=${coordinates.lat},${coordinates.lng}`
+      : data.origin
+    const message = `Necesito ayuda. Ubicación: ${location}. Origen registrado en TaxiYa: ${data.origin}.`
+    return `https://wa.me/?text=${encodeURIComponent(message)}`
+  }
+
+  const startCountdown = () => {
+    if (timer.current || sent) return
+    setCountdown(5)
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        ({ coords }) => setCoordinates({ lat: coords.latitude, lng: coords.longitude }),
+        () => setCoordinates(null),
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 30_000 },
+      )
+    }
+    timer.current = setInterval(() => {
+      setCountdown((value) => {
+        if (value === null || value <= 1) {
+          if (timer.current) clearInterval(timer.current)
+          timer.current = null
+          const notification = newNotification(
+            "Alerta SOS iniciada",
+            "Alerta de demostración. Usa los botones para llamar al 123 o compartir por WhatsApp.",
+            "tracking",
+          )
+          beep(data.sound)
+          setSent(true)
+          update((current) => ({
+            sosActive: true,
+            notificationItems: [notification, ...current.notificationItems],
+          }))
+          return 0
+        }
+        return value - 1
+      })
+    }, 1000)
+  }
+
+  const cancelCountdown = () => {
+    if (timer.current) clearInterval(timer.current)
+    timer.current = null
+    setCountdown(null)
+  }
 
   useEffect(
     () => () => {
-      if (timer.current) clearTimeout(timer.current)
+      if (timer.current) clearInterval(timer.current)
     },
     [],
   )
-
-  const activate = () => {
-    timer.current = null
-    setHolding(false)
-    const notification = newNotification(
-      "Alerta SOS local activada",
-      `Registro local creado desde ${data.origin}. No se envió a servicios externos.`,
-      "tracking",
-    )
-    beep(data.sound)
-    setSent(true)
-    update((current) => ({
-      sosActive: true,
-      notificationItems: [notification, ...current.notificationItems],
-    }))
-  }
-
-  const start = () => {
-    if (sent || timer.current) return
-    setHolding(true)
-    timer.current = setTimeout(activate, 2000)
-  }
-
-  const stop = () => {
-    setHolding(false)
-    if (timer.current) clearTimeout(timer.current)
-    timer.current = null
-  }
-
-  const call123 = () => {
-    appNotice("Si estás en peligro, llama ya")
-    window.location.href = "tel:123"
-  }
 
   if (sent)
     return (
@@ -2641,14 +2833,15 @@ export function SOS({ data, update }: StoredUpdateProps) {
         <span className="sos-circle">
           <Icon name="shield" size={30} />
         </span>
-        <h2>Alerta registrada localmente</h2>
+        <h2>Alerta SOS lista</h2>
         <p>
-          Registramos localmente la ubicación {data.origin} a las {nowLabel()}.
-          No se envió información a tu contacto ni a una central.
+          Esta demostración no contacta servicios automáticamente. Llama al 123 y comparte tu ubicación por WhatsApp.
+          {coordinates ? ` Coordenadas obtenidas a las ${nowLabel()}.` : ` Último punto conocido: ${data.origin}.`}
         </p>
-        <Button variant="danger" onClick={call123}>
-          Llamar al 123
-        </Button>
+        <a className="button danger" href="tel:123">Llamar al 123</a>
+        <a className="button secondary" href={whatsappUrl()} target="_blank" rel="noreferrer">
+          Compartir ubicación por WhatsApp
+        </a>
         <Button
           variant="secondary"
           onClick={() => {
@@ -2671,35 +2864,17 @@ export function SOS({ data, update }: StoredUpdateProps) {
       </span>
       <h2>Ayuda de emergencia</h2>
       <p id="sos-hold-help">
-        Mantén presionado 2 segundos. Con teclado, mantén Espacio o Enter. Para
-        ayuda real, llama al 123.
+        Se iniciará una cuenta de 5 segundos que puedes cancelar. Después tendrás botones para llamar al 123 y compartir por WhatsApp.
       </p>
-      <button
-        className={`hold-sos ${holding ? "holding" : ""}`}
-        aria-describedby="sos-hold-help"
-        aria-pressed={holding}
-        onPointerDown={start}
-        onPointerUp={stop}
-        onPointerCancel={stop}
-        onPointerLeave={stop}
-        onKeyDown={(event) => {
-          if ((event.key === " " || event.key === "Enter") && !event.repeat) {
-            event.preventDefault()
-            start()
-          }
-        }}
-        onKeyUp={(event) => {
-          if (event.key === " " || event.key === "Enter") stop()
-        }}
-        onBlur={stop}
-      >
-        {holding
-          ? "Mantén presionado para activar SOS…"
-          : "Mantener para activar SOS"}
-      </button>
-      <Button variant="secondary" onClick={call123}>
-        Llamar al 123
-      </Button>
+      {countdown !== null ? (
+        <>
+          <strong className="sos-countdown" role="timer" aria-live="assertive">{countdown}</strong>
+          <Button variant="secondary" onClick={cancelCountdown}>Cancelar alerta</Button>
+        </>
+      ) : (
+        <Button variant="danger" onClick={startCountdown}>Iniciar cuenta de SOS</Button>
+      )}
+      <a className="button secondary" href="tel:123">Llamar al 123 ahora</a>
     </div>
   )
 }
@@ -2777,6 +2952,8 @@ export function Tracking({
 }) {
   const route = fareFor(data)
 
+  const [etaMinutes, setEtaMinutes] = useState(route.minutes)
+
   const selectedDriver = drivers.find(
     (driver) => driver.name === data.selectedDriver,
   ) || {
@@ -2793,7 +2970,7 @@ export function Tracking({
     lng: -73.356,
   }
 
-  const [arrivalAt] = useState(
+  const [arrivalAt, setArrivalAt] = useState(
     () => data.tripArrivalAt || Date.now() + route.minutes * 60000,
   )
 
@@ -2847,8 +3024,12 @@ export function Tracking({
       return
     }
 
-    update({ shared: true })
-    setModal(<ContactView data={data} />)
+    void shareTrip(data)
+      .then(() => update({ shared: true }))
+      .catch((error: unknown) => {
+        if (error instanceof Error && error.name === "AbortError") return
+        appNotice("No se pudo abrir la opción para compartir. Inténtalo de nuevo.")
+      })
   }
 
   const shield = data.sosActive
@@ -2877,7 +3058,18 @@ export function Tracking({
   return (
     <section className="map-screen">
       <div className="map-bg tracking-map">
-        <MapView origin={data.origin} destination={data.destination} />
+        <MapView
+          origin={data.origin}
+          destination={data.destination}
+          originCoordinates={data.originCoordinates}
+          attributionAbovePanel
+          animateTaxi
+          taxiEtaMinutes={route.minutes}
+          onTaxiEtaChange={(minutes) => {
+            setEtaMinutes(minutes)
+            setArrivalAt(Date.now() + minutes * 60_000)
+          }}
+        />
       </div>
       <div className={`trip-top shield-${shield}`}>
         <span>
@@ -2893,9 +3085,9 @@ export function Tracking({
       <div className="tracking-sheet">
         <div className="handle" />
         <div className="trip-progress">
-          <span>En camino</span>
-          <strong>{route.minutes} min estimados</strong>
-          <small>Llegada estimada · {eta}</small>
+          <span>En camino · simulación de demostración</span>
+          <strong>{etaMinutes} min estimados</strong>
+          <small>ETA orientativa · {eta}</small>
         </div>
         <div className="route-mini">
           <i />
@@ -2954,22 +3146,22 @@ export function ShieldCheck({
   escalate: () => void
 }) {
   const [seconds, setSeconds] = useState(15)
+  const escalated = useRef(false)
 
   useEffect(() => {
     const t = setInterval(
-      () =>
-        setSeconds((value) => {
-          if (value <= 1) {
-            clearInterval(t)
-            escalate()
-            return 0
-          }
-          return value - 1
-        }),
+      () => setSeconds((value) => Math.max(0, value - 1)),
       1000,
     )
     return () => clearInterval(t)
   }, [])
+
+  useEffect(() => {
+    if (seconds === 0 && !escalated.current) {
+      escalated.current = true
+      escalate()
+    }
+  }, [seconds, escalate])
 
   return (
     <div className="shield-check">
@@ -3022,49 +3214,115 @@ export function ShieldEscalated({
   update: Update
   close: () => void
 }) {
+  const [countdown, setCountdown] = useState(5)
+  const [coordinates, setCoordinates] = useState<{ lat: number; lng: number } | null>(null)
+  const alertRegistered = useRef(false)
+
   useEffect(() => {
+    if (!navigator.geolocation) return
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => setCoordinates({ lat: coords.latitude, lng: coords.longitude }),
+      () => setCoordinates(null),
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30_000 },
+    )
+  }, [])
+
+  useEffect(() => {
+    if (countdown === 0 || alertRegistered.current) return
+    const timer = setInterval(() => {
+      setCountdown((value) => Math.max(0, value - 1))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [countdown])
+
+  useEffect(() => {
+    if (countdown !== 0 || alertRegistered.current) return
+    alertRegistered.current = true
     beep(data.sound)
     const notification = newNotification(
-      "Alerta local del Escudo",
-      `Registro local creado desde ${data.origin}.`,
+      "Alerta SOS iniciada",
+      `Alerta de demostración. Usa los botones para llamar al 123 o compartir la ubicación desde ${data.origin}.`,
       "tracking",
     )
     update((current) => ({
       sosActive: true,
       notificationItems: [notification, ...current.notificationItems],
     }))
-  }, [])
+  }, [countdown, data.origin, data.sound, update])
 
   return (
     <div className="shield-check">
       <span className="sos-circle">
         <Icon name="shield" size={30} />
       </span>
-      <h2>Alerta registrada localmente</h2>
-      <p>
-        {nowLabel()} · {data.origin}. No se envió a contactos ni autoridades.
-      </p>
-      <a
-        className="button danger"
-        href="tel:123"
-        onClick={() => appNotice("Si estás en peligro, llama ya")}
-      >
-        Llamar al 123
-      </a>
-      <Button
-        onClick={() => {
-          update({ sosActive: false, shieldChecks: data.shieldChecks + 1 })
-          close()
-          appNotice("Alerta local cerrada. El Escudo vuelve a Todo en orden.")
-        }}
-      >
-        Estoy a salvo
-      </Button>
+      {countdown > 0 ? (
+        <>
+          <h2>Iniciando alerta SOS</h2>
+          <p>
+            La alerta se iniciará en {countdown} segundos. Puedes cancelar si
+            estás a salvo. Esta demostración no contacta automáticamente a
+            emergencias ni a tus contactos.
+          </p>
+          <strong className="countdown" role="timer" aria-live="assertive">
+            {countdown} s
+          </strong>
+          <Button
+            onClick={() => {
+              update({ sosActive: false, shieldChecks: data.shieldChecks + 1 })
+              close()
+              appNotice("Alerta cancelada. El Escudo vuelve a Todo en orden.")
+            }}
+          >
+            Cancelar alerta
+          </Button>
+        </>
+      ) : (
+        <>
+          <h2>Alerta registrada localmente</h2>
+          <p>
+            {nowLabel()} · {coordinates
+              ? `${coordinates.lat.toFixed(5)}, ${coordinates.lng.toFixed(5)}`
+              : data.origin}
+            . No se envió a contactos ni autoridades.
+          </p>
+          <a
+            className="button danger"
+            href="tel:123"
+            onClick={() => appNotice("Si estás en peligro, llama ya")}
+          >
+            Llamar al 123
+          </a>
+          <a
+            className="button secondary"
+            href={`https://wa.me/?text=${encodeURIComponent(
+              `Necesito ayuda. Ubicación: ${
+                coordinates
+                  ? `https://maps.google.com/?q=${coordinates.lat},${coordinates.lng}`
+                  : data.origin
+              }.`,
+            )}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Compartir ubicación por WhatsApp
+          </a>
+          <Button
+            onClick={() => {
+              update({ sosActive: false, shieldChecks: data.shieldChecks + 1 })
+              close()
+              appNotice("Alerta local cerrada. El Escudo vuelve a Todo en orden.")
+            }}
+          >
+            Estoy a salvo
+          </Button>
+        </>
+      )}
     </div>
   )
 }
 
 export function ContactView({ data }: { data: Stored }) {
+  const [shareError, setShareError] = useState("")
   const registered = Boolean(
     data.driverAccount.email && data.driverAccount.name,
   )
@@ -3077,16 +3335,30 @@ export function ContactView({ data }: { data: Stored }) {
     [data.vehicle.make, data.vehicle.color].filter(Boolean).join(" · ") ||
     "Vehículo sin registrar"
 
+  const share = () => {
+    setShareError("")
+    void shareTrip(data).catch((error: unknown) => {
+      if (error instanceof Error && error.name === "AbortError") return
+      setShareError("No se pudo abrir el menú para compartir. Puedes probar el enlace de WhatsApp.")
+    })
+  }
+
+  const shareLink = `${window.location.origin}${window.location.pathname}#/shared-trip?id=${encodeURIComponent(data.activeRequestId)}`
+  const whatsappLink = `https://wa.me/?text=${encodeURIComponent(`TaxiYa Ocaña: ${driverName}, placa ${data.vehicle.plate || "pendiente"}. Viaje ${data.origin} → ${data.destination}. Seguimiento: ${shareLink}`)}`
+
   return (
     <>
       <span className="ai-badge">Vista local del trayecto</span>
       <h2>Trayecto de {data.account?.name || "la persona usuaria"}</h2>
       <p className="muted">
-        Esta vista no genera un enlace público ni envía la ubicación fuera del
-        dispositivo.
+        Comparte conductor, placa, origen y destino. El enlace muestra el estado del viaje si la sincronización está configurada.
       </p>
       <div className="contact-map">
-        <MapView origin={data.origin} destination={data.destination} />
+        <MapView
+          origin={data.origin}
+          destination={data.destination}
+          originCoordinates={data.originCoordinates}
+        />
       </div>
       <div className="driver-card simple">
         <div className="driver-photo">{initials(driverName)}</div>
@@ -3105,6 +3377,16 @@ export function ContactView({ data }: { data: Stored }) {
           Llamar a {firstName(data.account.name || "la persona")}
         </a>
       )}
+      <Button onClick={share}>Compartir viaje</Button>
+      <a className="button secondary" href={whatsappLink} target="_blank" rel="noreferrer">
+        Compartir por WhatsApp
+      </a>
+      {!liveRidesConfigured() && (
+        <p className="notice-card" role="status">
+          El enlace no podrá mostrar actualizaciones hasta que se configure Supabase.
+        </p>
+      )}
+      {shareError && <p className="error" role="alert">{shareError}</p>}
     </>
   )
 }

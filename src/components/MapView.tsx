@@ -31,6 +31,14 @@ type MapViewProps = {
 
   onControlsReady?: (controls: MapViewControls | null) => void
 
+  originCoordinates?: { lat: number; lng: number } | null
+
+  animateTaxi?: boolean
+
+  taxiEtaMinutes?: number
+
+  onTaxiEtaChange?: (minutes: number) => void
+
   className?: string
 }
 
@@ -72,6 +80,14 @@ export function MapView({
 
   onControlsReady,
 
+  originCoordinates,
+
+  animateTaxi = false,
+
+  taxiEtaMinutes = 1,
+
+  onTaxiEtaChange,
+
   className = "",
 }: MapViewProps) {
   const language = useContext(TaxiLauncherContext).language
@@ -94,6 +110,8 @@ export function MapView({
 
   const onControlsReadyRef = useRef(onControlsReady)
 
+  const onTaxiEtaChangeRef = useRef(onTaxiEtaChange)
+
   // Los callbacks suelen crearse inline en las pantallas. Mantenerlos en refs evita destruir y
 
   // reconstruir el mapa en cada render, lo que provocaba destellos y mosaicos que parecían vacíos.
@@ -103,6 +121,8 @@ export function MapView({
   onDriverPickRef.current = onDriverPick
 
   onControlsReadyRef.current = onControlsReady
+
+  onTaxiEtaChangeRef.current = onTaxiEtaChange
 
   const [offline, setOffline] = useState(() => navigator.onLine === false)
 
@@ -139,6 +159,7 @@ export function MapView({
     if (!elementRef.current) return
 
     const routeControllers: AbortController[] = []
+    let taxiAnimationTimer = 0
 
     const map = L.map(elementRef.current, {
       zoomControl: false,
@@ -248,7 +269,7 @@ export function MapView({
 
     window.addEventListener("online", onOnline)
 
-    const start = farePlaces[origin]
+    const start = originCoordinates || farePlaces[origin]
 
     const end = destination ? farePlaces[destination] : undefined
 
@@ -329,10 +350,53 @@ export function MapView({
             padding: [34, 34],
             animate: false,
           })
-        })
 
+          if (animateTaxi) {
+            const taxi = L.marker(points[0], {
+              icon: markerIcon("taxi"),
+              title: "Marcador de taxi animado para demostración",
+              interactive: false,
+              keyboard: false,
+            }).addTo(map)
+            let progress = 0
+            onTaxiEtaChangeRef.current?.(Math.max(1, taxiEtaMinutes))
+            taxiAnimationTimer = window.setInterval(() => {
+              progress = Math.min(1, progress + 1 / 30)
+              const pointIndex = Math.min(
+                points.length - 1,
+                Math.floor(progress * (points.length - 1)),
+              )
+              taxi.setLatLng(points[pointIndex])
+              onTaxiEtaChangeRef.current?.(
+                Math.max(0, Math.ceil(taxiEtaMinutes * (1 - progress))),
+              )
+              if (progress >= 1) window.clearInterval(taxiAnimationTimer)
+            }, 2_500)
+          }
+        })
         .catch(() => {
-          if (!routeController.signal.aborted) setRouteUnavailable(true)
+          if (routeController.signal.aborted) return
+          setRouteUnavailable(true)
+          if (animateTaxi && start && end) {
+            const taxi = L.marker([start.lat, start.lng], {
+              icon: markerIcon("taxi"),
+              title: "Marcador de taxi animado para demostración",
+              interactive: false,
+              keyboard: false,
+            }).addTo(map)
+            let progress = 0
+            taxiAnimationTimer = window.setInterval(() => {
+              progress = Math.min(1, progress + 1 / 30)
+              taxi.setLatLng([
+                start.lat + (end.lat - start.lat) * progress,
+                start.lng + (end.lng - start.lng) * progress,
+              ])
+              onTaxiEtaChangeRef.current?.(
+                Math.max(0, Math.ceil(taxiEtaMinutes * (1 - progress))),
+              )
+              if (progress >= 1) window.clearInterval(taxiAnimationTimer)
+            }, 2_500)
+          }
         })
 
       map.fitBounds(
@@ -486,6 +550,8 @@ export function MapView({
 
       window.clearTimeout(resize)
 
+      window.clearInterval(taxiAnimationTimer)
+
       routeControllers.forEach((controller) => controller.abort())
 
       window.removeEventListener("offline", onOffline)
@@ -500,7 +566,7 @@ export function MapView({
 
       locationMarkerRef.current = null
     }
-  }, [dark, destination, interactive, origin, showDrivers, showPlaces])
+  }, [animateTaxi, dark, destination, interactive, origin, originCoordinates?.lat, originCoordinates?.lng, showDrivers, showPlaces, taxiEtaMinutes])
 
   const mapUnavailable = offline || tilesUnavailable || !tilesLoaded
 

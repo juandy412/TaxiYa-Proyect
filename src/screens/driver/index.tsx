@@ -1,6 +1,6 @@
-import { type ReactNode, useEffect, useState } from "react"
+import { type ReactNode, useEffect, useRef, useState } from "react"
 
-import type { Screen, Stored, Update } from "../../lib/types"
+import type { DriverDocument, Screen, Stored, Update } from "../../lib/types"
 
 import { fareFor, rideRequests } from "../../lib/fare"
 
@@ -30,6 +30,7 @@ import { MapView } from "../../components/MapView"
 import { assignDriver, cancelTrip, finishTrip } from "../../lib/trip"
 
 import { hashPassword } from "../../lib/password"
+import { acceptLiveRide, liveRidesConfigured } from "../../lib/liveRides"
 
 import {
   AppSettings,
@@ -343,7 +344,7 @@ export function RequestDetail({
     go("requests")
   }
 
-  const accept = () => {
+  const accept = async () => {
     if (
       !data.isConnected ||
       !data.online ||
@@ -354,6 +355,24 @@ export function RequestDetail({
       )
 
       return
+    }
+
+    if (request.real && liveRidesConfigured()) {
+      try {
+        await acceptLiveRide(
+          request.id,
+          data.driverAccount.name || "Conductor TaxiYa",
+          data.vehicle.plate,
+        )
+      } catch (error) {
+        appNotice(
+          error instanceof Error
+            ? error.message
+            : "No se pudo aceptar el viaje. Inténtalo otra vez.",
+        )
+        go("requests")
+        return
+      }
     }
 
     assignDriver(update, data.driverAccount.name, {
@@ -1233,10 +1252,21 @@ export function DriverRegister({
 
   const [vehicle, setVehicle] = useState({ make: "", color: "", plate: "" })
 
-  const [documents, setDocuments] = useState(
+  const [documents, setDocuments] = useState<DriverDocument[]>(
     ["Licencia", "SOAT", "Tarjeta de propiedad", "Foto del vehículo"].map(
       (name) => ({ name, uploaded: false }),
     ),
+  )
+
+  const [previews, setPreviews] = useState<
+    Record<string, { url: string; type: string; fileName: string }>
+  >({})
+  const previewsRef = useRef(previews)
+  previewsRef.current = previews
+
+  useEffect(
+    () => () => Object.values(previewsRef.current).forEach((preview) => URL.revokeObjectURL(preview.url)),
+    [],
   )
 
   const [registrationError, setRegistrationError] = useState("")
@@ -1443,25 +1473,67 @@ export function DriverRegister({
           <>
             <h1>Documentos</h1>
             <p className="muted">
-              Subida simulada; los archivos no salen de este dispositivo.
+              Elige una imagen o PDF. La vista previa solo se conserva en este dispositivo y no se envía a un servidor.
             </p>
             <div className="choice-list">
               {documents.map((document, index) => (
-                <button
-                  key={document.name}
-                  onClick={() =>
-                    setDocuments(
-                      documents.map((item, itemIndex) =>
-                        itemIndex === index
-                          ? { ...item, uploaded: true }
-                          : item,
-                      ),
-                    )
-                  }
-                >
-                  {document.name}
-                  <span>{document.uploaded ? "✓ Cargado" : "Subir"}</span>
-                </button>
+                <div className="driver-document" key={document.name}>
+                  <label className="driver-document-picker" htmlFor={`driver-doc-${index}`}>
+                    <span>{document.name}</span>
+                    <span>{document.uploaded ? "✓ Cambiar archivo" : "Elegir archivo"}</span>
+                  </label>
+                  <input
+                    id={`driver-doc-${index}`}
+                    className="visually-hidden"
+                    type="file"
+                    accept="image/*,.pdf,application/pdf"
+                    aria-label={`Seleccionar ${document.name}`}
+                    onChange={(event) => {
+                      const file = event.currentTarget.files?.[0]
+                      if (!file) return
+                      const previous = previews[document.name]
+                      if (previous) URL.revokeObjectURL(previous.url)
+                      const preview = {
+                        url: URL.createObjectURL(file),
+                        type: file.type,
+                        fileName: file.name,
+                      }
+                      previewsRef.current = {
+                        ...previewsRef.current,
+                        [document.name]: preview,
+                      }
+                      setPreviews((current) => ({
+                        ...current,
+                        [document.name]: preview,
+                      }))
+                      setDocuments((current) =>
+                        current.map((item, itemIndex) =>
+                          itemIndex === index
+                            ? {
+                                ...item,
+                                uploaded: true,
+                                fileName: file.name,
+                                fileType: file.type,
+                              }
+                            : item,
+                        ),
+                      )
+                    }}
+                  />
+                  <small>{previews[document.name]?.fileName || document.fileName || "Aún no seleccionado"}</small>
+                  {previews[document.name]?.type.startsWith("image/") && (
+                    <img
+                      className="driver-document-preview"
+                      src={previews[document.name].url}
+                      alt={`Vista previa: ${document.name}`}
+                    />
+                  )}
+                  {previews[document.name]?.type === "application/pdf" && (
+                    <a href={previews[document.name].url} target="_blank" rel="noreferrer">
+                      Abrir vista previa del PDF
+                    </a>
+                  )}
+                </div>
               ))}
             </div>
             <Button

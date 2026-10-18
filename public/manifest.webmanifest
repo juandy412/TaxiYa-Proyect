@@ -1,0 +1,19 @@
+{
+  "name": "TaxiYa Ocaña",
+  "short_name": "TaxiYa",
+  "description": "Aplicación demostrativa de taxis para Ocaña, Norte de Santander.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fffdf8",
+  "theme_color": "#205a45",
+  "lang": "es-CO",
+  "icons": [
+    {
+      "src": "/taxiya-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -31,7 +31,7 @@ export function haversine(
 export function fareFor(data: Stored) {
   const originName = canonicalPlaceName(data.origin)
   const destinationName = canonicalPlaceName(data.destination)
-  const origin = farePlaces[originName]
+  const origin = data.originCoordinates || farePlaces[originName]
   const destination = farePlaces[destinationName]
   if (!origin || !destination) {
     return {
@@ -91,7 +91,7 @@ export function rideRequests(data: Stored) {
     data.tripStatus === "requested"
       ? [
           {
-            id: "passenger-real",
+            id: data.activeRequestId || "passenger-real",
             passenger: data.account?.name || "Persona usuaria",
             origin: data.origin,
             destination: data.destination,

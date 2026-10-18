@@ -20,7 +20,7 @@
 html, body, #root { min-height: 100%; margin: 0; }
 body { background: #edf1ee; color: var(--ink); font-family: "Manrope", sans-serif; font-size: 16px; }
 button, input, select, textarea { font: inherit; }
-button { color: inherit; }
+button { color: inherit; min-height: 48px; }
 button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid rgba(201,161,95,.55); outline-offset: 2px; }
 button:active { transform: translateY(1px); }
 button:disabled { opacity: .58; cursor: not-allowed; transform: none; }
@@ -310,10 +310,16 @@ small { font-size: 14px; }
 .confirm-trip { align-self: stretch !important; max-width: 100% !important; background: white; border: 1px solid var(--gold); }
 .confirm-trip strong { color: var(--pine); font: 700 24px Inter, sans-serif; }
 .quick-replies { padding: 8px 12px; display: flex; gap: 7px; overflow-x: auto; border-top: 1px solid var(--line); }
-.quick-replies button { min-height: 42px; flex: 0 0 auto; padding: 0 13px; border: 1px solid var(--pine); border-radius: 22px; background: transparent; color: var(--pine); font-weight: 700; }
-.taxi-input { margin: 0 12px; min-height: 52px; display: grid; grid-template-columns: 46px 1fr 46px; border: 1.5px solid var(--line); border-radius: 16px; background: white; overflow: hidden; }
+.quick-replies button { min-height: 48px; flex: 0 0 auto; padding: 0 13px; border: 1px solid var(--pine); border-radius: 22px; background: transparent; color: var(--pine); font-weight: 700; }
+.taxi-input { margin: 0 12px; min-height: 58px; display: grid; grid-template-columns: minmax(0, 1fr) 94px 48px; border: 1.5px solid var(--line); border-radius: 16px; background: white; overflow: hidden; }
 .taxi-input input, .taxi-input button { border: 0; background: transparent; outline: 0; }
 .taxi-input button:last-child { background: var(--pine); color: white; }
+.taxi-input .voice-button { display: flex; min-width: 0; align-items: center; justify-content: center; gap: 5px; border-left: 1px solid var(--line); color: var(--pine); font-size: 13px; font-weight: 800; }
+.taxi-input .voice-button.listening { background: #f8e8e2; color: #742d20; }
+.taxi-input .voice-button:disabled { opacity: .72; }
+.taxi-input .voice-button span { white-space: nowrap; }
+.assistant-voice-status { margin: 4px 14px; color: var(--terracotta); font-size: 14px; }
+.assistant-voice-toggle { min-height: 48px; margin: 4px 12px; padding: 8px 12px; border: 1px solid var(--pine); border-radius: 12px; background: var(--paper); color: var(--pine); font-weight: 800; }
 .privacy-note { padding: 8px 16px 12px; text-align: center; font-size: 12px; }
 
 .fairness { display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px; border-radius: 15px; background: var(--soft); color: var(--pine); font-weight: 800; }
@@ -1052,7 +1058,7 @@ html.dark-mode, html.dark-mode body { background: #050706 !important; color: #ee
 .admin-welcome p { margin: 0; }
 .admin-mark, .admin-shortcut-icon { width: 44px; height: 44px; flex: 0 0 44px; border-radius: 14px; background: #e4f1e6; color: #276b47; display: grid; place-items: center; }
 .admin-tabs { position: sticky; top: 0; z-index: 10; display: flex; gap: 7px; overflow-x: auto; padding: 8px 0 12px; margin-bottom: 16px; background: var(--paper); border-bottom: 1px solid var(--line); scrollbar-width: thin; }
-.admin-tabs button { min-height: 42px; flex: 0 0 auto; display: flex; align-items: center; gap: 7px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); color: var(--ink); font-weight: 800; }
+.admin-tabs button { min-height: 48px; flex: 0 0 auto; display: flex; align-items: center; gap: 7px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); color: var(--ink); font-weight: 800; }
 .admin-tabs button.active { background: #276b47; border-color: #276b47; color: white; }
 .admin-section { display: grid; gap: 15px; animation: fade .16s ease; }
 .admin-section h2 { margin: 0; font-size: 19px; }
@@ -1199,7 +1205,6 @@ html.dark-mode, html.dark-mode body { background: #070907 !important; color: #f1
 .chat-screen .ride-messages > span b { display: block; color: var(--pine); margin-bottom: 4px; font-size: 11px; }
 .chat-screen .ride-messages > span.own b { color: #e0f8e9; }
 .chat-screen .ride-messages > span small { display: block; margin-top: 6px; text-align: right; opacity: .75; font-size: 10px; }
-.taxi-input { grid-template-columns: minmax(0, 1fr) 46px !important; }
 .taxi-input input { min-width: 0; width: 100%; padding-inline: 13px; }
 .taxi-input button:last-child { display: grid; place-items: center; }
 
@@ -1308,11 +1313,16 @@ html.dark-mode, html.dark-mode body { background: #070907 !important; color: #f1
 }
 
 .taxi-input {
-  grid-template-columns: minmax(0, 1fr) 48px !important;
+  grid-template-columns: minmax(0, 1fr) 112px 48px !important;
 }
 
 .taxi-input.has-voice {
-  grid-template-columns: minmax(0, 1fr) 48px 48px !important;
+  grid-template-columns: minmax(0, 1fr) 112px 48px !important;
+}
+
+.large-text .taxi-input,
+.large-text .taxi-input.has-voice {
+  grid-template-columns: minmax(0, 1fr) 128px 48px !important;
 }
 
 .taxi-input > button {
@@ -1546,4 +1556,84 @@ html.dark-mode, html.dark-mode body { background: #070907 !important; color: #f1
   .zone-options { gap: 7px; padding: 9px; }
   .zone-choice { min-height: 52px; padding: 8px 6px; font-size: 14px; }
   .zone-choice.active { padding-right: 20px; }
+}
+
+.driver-document {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+}
+.driver-document-picker {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--pine);
+  font-weight: 800;
+  cursor: pointer;
+}
+.driver-document-picker span:last-child {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--soft);
+}
+.driver-document-preview {
+  width: min(100%, 300px);
+  max-height: 220px;
+  object-fit: contain;
+  border-radius: 10px;
+  background: var(--soft);
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+.visually-hidden:focus-visible + * { outline: 3px solid var(--gold); }
+.sos-countdown {
+  display: grid;
+  width: 84px;
+  height: 84px;
+  place-items: center;
+  border: 4px solid var(--terracotta);
+  border-radius: 50%;
+  color: var(--terracotta);
+  font-size: 38px;
+}
+.shared-trip-page {
+  display: grid;
+  gap: 14px;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 24px 18px;
+}
+.shared-trip-brand { color: var(--pine); font-weight: 900; letter-spacing: .06em; }
+.shared-trip-status { padding: 12px; border-radius: 12px; background: var(--soft); color: var(--pine); font-size: 18px; font-weight: 800; }
+.shared-trip-page .route-card { display: grid; gap: 12px; }
+.shared-trip-page .route-card span { display: grid; gap: 4px; }
+.loading-skeleton-page { display: grid; align-content: start; gap: 16px; }
+.skeleton { display: block; border-radius: 12px; background: linear-gradient(90deg, var(--soft), color-mix(in srgb, var(--paper) 55%, var(--line)), var(--soft)); background-size: 200% 100%; animation: skeleton-shimmer 1.4s ease-in-out infinite; }
+.skeleton-title { width: 68%; height: 34px; }
+.skeleton-line { width: 88%; height: 18px; }
+.skeleton-card { width: 100%; height: 150px; }
+.skeleton-button { width: 100%; height: 52px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.app-error-screen { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; text-align: center; }
+.dark-mode .driver-document { background: var(--paper); }
+.dark-mode .taxi-input { background: #171e1b; }
+.dark-mode .taxi-input .voice-button { color: #9bd6b7; }
+.dark-mode .taxi-input .voice-button.listening { background: #472d27; color: #ffd8c9; }
+
+@keyframes skeleton-shimmer { to { background-position: -200% 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
 }

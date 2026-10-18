@@ -19,10 +19,20 @@ import {
 } from "./lib/storage"
 
 import { beep, newNotification } from "./lib/format"
+import {
+  fetchOpenRides,
+  fetchRide,
+  liveRidesConfigured,
+  publishRide,
+  subscribeToRides,
+  updateLiveRideStatus,
+} from "./lib/liveRides"
 
 import { BottomNav, ModalShell, TaxiLauncherContext } from "./components"
 
 import { TaxiAssistant } from "./components/TaxiAssistant"
+import { SharedTrip } from "./components/SharedTrip"
+import { AppErrorBoundary } from "./components/AppErrorBoundary"
 
 import {
   AdminRegister,
@@ -124,6 +134,7 @@ const ALL_SCREENS: Screen[] = [
   "earnings",
   "driver-profile",
   "admin",
+  "shared-trip",
 ]
 
 const PUBLIC_SCREENS: Screen[] = [
@@ -158,7 +169,7 @@ const homeFor = (role: Role): Screen =>
   role === "driver" ? "driver-home" : role === "admin" ? "admin" : "home"
 
 const screenFromHash = (): Screen | null => {
-  const name = window.location.hash.replace(/^#\//, "") as Screen
+  const name = window.location.hash.replace(/^#\//, "").split("?")[0] as Screen
 
   return ALL_SCREENS.includes(name) ? name : null
 }
@@ -166,6 +177,8 @@ const screenFromHash = (): Screen | null => {
 // Devuelve la pantalla pedida si el estado actual la permite; si no, la pantalla de inicio que corresponde.
 
 const guardScreen = (wanted: Screen, data: Stored): Screen => {
+  if (wanted === "shared-trip") return wanted
+
   if (!data.loggedIn)
     return PUBLIC_SCREENS.includes(wanted) ? wanted : "welcome"
 
@@ -286,6 +299,7 @@ function App() {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const scrollTimer = useRef<number>(0)
+  const lastSyncNotice = useRef("")
 
   // Indicador de scroll que aparece solo mientras te desplazas, y sombra bajo el encabezado cuando hay contenido arriba.
 
@@ -347,6 +361,185 @@ function App() {
   }, [data])
 
   useEffect(() => {
+    if (!data.loggedIn || !liveRidesConfigured()) return
+
+    let active = true
+    const applyRide = (ride: Awaited<ReturnType<typeof fetchRide>>) => {
+      if (!ride || !active) return
+      setData((current) => {
+        if (!current.loggedIn) return current
+        if (current.role === "passenger") {
+          if (current.activeRequestId !== ride.id) return current
+          const status = {
+            requested: "requested",
+            accepted: "assigned",
+            enroute: "enroute",
+            arrived: "enroute",
+            in_trip: "active",
+            finished: "completed",
+            cancelled: "cancelled",
+          } as const
+          return {
+            ...current,
+            tripStatus: status[ride.status],
+            selectedDriver:
+              ride.status === "cancelled" || ride.status === "requested"
+                ? ""
+                : ride.driverName || current.selectedDriver,
+            vehicle: ride.plate
+              ? { ...current.vehicle, plate: ride.plate }
+              : current.vehicle,
+            driverArrived:
+              ride.status === "arrived" || current.driverArrived,
+          }
+        }
+        if (
+          current.role === "driver" &&
+          ride.status === "requested" &&
+          current.online &&
+          !["assigned", "enroute", "active"].includes(current.tripStatus) &&
+          current.activeRequestId !== ride.id
+        ) {
+          return {
+            ...current,
+            activeRequestId: ride.id,
+            activeRideReal: true,
+            activePassengerName: "Pasajero",
+            activePassengerNeeds: "Sin necesidades registradas",
+            origin: ride.origin,
+            destination: ride.destination,
+            offer: ride.offer,
+            tripStatus: "requested",
+            paymentMethod: "Efectivo",
+          }
+        }
+        return current
+      })
+      if (data.role === "passenger" && ride.status === "finished")
+        setScreen((current) => (current === "tracking" ? "rating" : current))
+      if (data.role === "passenger" && ride.status === "cancelled")
+        setScreen((current) =>
+          ["searching", "assigned", "tracking"].includes(current) ? "home" : current,
+        )
+      if (data.role === "passenger" && ride.status === "requested")
+        setScreen((current) =>
+          ["assigned", "tracking"].includes(current) ? "searching" : current,
+        )
+    }
+
+    const unsubscribe = subscribeToRides(
+      (ride) => applyRide(ride),
+      (error) => {
+        if (active) setToast(`No se pudo conectar con solicitudes: ${error.message}`)
+      },
+    )
+
+    if (data.role === "driver" && data.online) {
+      void fetchOpenRides()
+        .then((rides) => {
+          const incoming = rides.find(
+            (ride) => ride.id !== data.activeRequestId,
+          )
+          if (incoming) applyRide(incoming)
+        })
+        .catch((error: unknown) => {
+          if (active)
+            setToast(
+              `No se pudieron cargar las solicitudes: ${error instanceof Error ? error.message : "error desconocido"}`,
+            )
+        })
+    }
+
+    if (
+      data.role === "passenger" &&
+      data.activeRequestId &&
+      ["requested", "assigned", "enroute", "active", "completed", "cancelled"].includes(
+        data.tripStatus,
+      )
+    ) {
+      void fetchRide(data.activeRequestId)
+        .then(applyRide)
+        .catch((error: unknown) => {
+          if (active)
+            setToast(
+              `No se pudo actualizar el viaje: ${error instanceof Error ? error.message : "error desconocido"}`,
+            )
+        })
+    }
+
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [
+    data.loggedIn,
+    data.role,
+    data.online,
+    data.activeRequestId,
+    data.tripStatus,
+    data.isConnected,
+  ])
+
+  useEffect(() => {
+    if (
+      !liveRidesConfigured() ||
+      !data.activeRequestId ||
+      !data.activeRideReal ||
+      !["passenger", "driver"].includes(data.role) ||
+      ["idle"].includes(data.tripStatus)
+    )
+      return
+
+    if (
+      data.role === "passenger" &&
+      !["requested", "cancelled"].includes(data.tripStatus)
+    )
+      return
+
+    const sync =
+      data.role === "passenger" && data.tripStatus === "cancelled"
+        ? updateLiveRideStatus(data.activeRequestId, "cancelled")
+        : publishRide(data)
+
+    void sync.catch((error: unknown) => {
+      const key = `${data.activeRequestId}:${data.tripStatus}`
+      if (lastSyncNotice.current === key) return
+      lastSyncNotice.current = key
+      setToast(
+        `No se pudo sincronizar el viaje. Revisa la configuración de Supabase y tu conexión. ${error instanceof Error ? error.message : ""}`,
+      )
+    })
+  }, [
+    data.activeRequestId,
+    data.tripStatus,
+    data.driverArrived,
+    data.origin,
+    data.destination,
+    data.offer,
+    data.role,
+    data.activeRideReal,
+    data.driverAccount.name,
+    data.vehicle.plate,
+  ])
+
+  useEffect(() => {
+    if (
+      liveRidesConfigured() ||
+      !data.loggedIn ||
+      data.role !== "passenger" ||
+      data.tripStatus !== "requested" ||
+      !data.activeRequestId
+    )
+      return
+    const key = `${data.activeRequestId}:no-supabase`
+    if (lastSyncNotice.current === key) return
+    lastSyncNotice.current = key
+    setToast(
+      "Viaje guardado solo en este teléfono. Configura Supabase para recibir solicitudes en otros dispositivos.",
+    )
+  }, [data.loggedIn, data.role, data.tripStatus, data.activeRequestId])
+
+  useEffect(() => {
     // Reflejar la conectividad del navegador para evitar que acciones dependientes de red
 
     // sigan apareciendo disponibles cuando el dispositivo está sin conexión.
@@ -364,6 +557,15 @@ function App() {
 
       window.removeEventListener("offline", syncConnection)
     }
+  }, [])
+
+  useEffect(() => {
+    if (!import.meta.env.PROD || !("serviceWorker" in navigator)) return
+    void navigator.serviceWorker.register("/sw.js").catch(() => {
+      setToast(
+        "No se pudo activar la instalación sin conexión. Puedes seguir usando TaxiYa en línea.",
+      )
+    })
   }, [])
 
   useEffect(() => {
@@ -516,7 +718,10 @@ function App() {
   }, [screen])
 
   useEffect(() => {
-    const target = `#/${screen}`
+    const target =
+      screen === "shared-trip"
+        ? `#/shared-trip?${new URLSearchParams(window.location.hash.split("?")[1] || "")}`
+        : `#/${screen}`
 
     if (window.location.hash !== target) window.location.hash = target
   }, [screen])
@@ -587,6 +792,8 @@ function App() {
             setLanguage={(language) => update({ language })}
           />
         )
+      case "shared-trip":
+        return <SharedTrip />
 
       case "login":
         return (
@@ -787,6 +994,7 @@ function App() {
     "driver-register",
     "forgot",
     "permission",
+    "shared-trip",
     "search",
     "map-picker",
     "fare",
@@ -816,6 +1024,7 @@ function App() {
       "chat",
       "forgot",
       "permission",
+      "shared-trip",
     ].includes(screen)
 
   const automaticDark = data.appearance === "Automático" && systemDark
@@ -870,19 +1079,21 @@ function App() {
             }}
           >
             <div className="screen-content" ref={scrollRef} onScroll={onScroll}>
-              <Suspense
-                fallback={
-                  <div
-                    className="page state-page"
-                    role="status"
-                    aria-live="polite"
-                  >
-                    <p className="muted center">Cargando…</p>
-                  </div>
-                }
-              >
-                {content}
-              </Suspense>
+              <AppErrorBoundary>
+                <Suspense
+                  fallback={
+                    <div className="page loading-skeleton-page" role="status" aria-live="polite">
+                      <span className="skeleton skeleton-title" />
+                      <span className="skeleton skeleton-line" />
+                      <span className="skeleton skeleton-card" />
+                      <span className="skeleton skeleton-button" />
+                      <span className="sr-only">Cargando pantalla…</span>
+                    </div>
+                  }
+                >
+                  {content}
+                </Suspense>
+              </AppErrorBoundary>
             </div>
           </TaxiLauncherContext.Provider>
           {!noNav && data.loggedIn && (
